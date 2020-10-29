@@ -1,6 +1,6 @@
 # DOTter
 
-(Mostly) Agda<sup>1</sup> developments on dependent object types (DOT) and related systems.
+(Mostly) Agda<sup>1</sup> developments and experiments on dependent object types (DOT) and related systems.
 
 ## Contents
 
