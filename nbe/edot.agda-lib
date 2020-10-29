@@ -1,0 +1,3 @@
+name: edot
+depend: standard-library
+include: agda
