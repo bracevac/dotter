@@ -7,4 +7,6 @@
 * `nbe/` Normalization by Evaluation (NbE) for a predicative System D calculus with
 full dependent types.
 
+* `logrel/` Strong normalization of DOT calculi using logical relations.
+
 <sup>1</sup><sub>_Dotter is German for egg yolk._</sub>
