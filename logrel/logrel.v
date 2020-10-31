@@ -303,7 +303,7 @@ Qed.
 
 Declare Scope dsub.
 
-Definition Dom := vl -> Prop.
+Notation Dom := (vl -> Prop).
 
 Definition subset (D1 D2 : Dom) : Prop := forall v, D1 v -> D2 v.
 Hint Unfold subset : dsub.
@@ -311,14 +311,17 @@ Notation "D1 ⊆ D2" := (subset D1 D2) (at level 75).
 (* Notation "v ∈ D" := (D v) (at level 75). *)
 (* Notation "⟨ H , v ⟩ ∈ D" := (D H v) (at level 75). *)
 
+
+Notation "{{ ' p | P }}" := (fun v => match v with
+                                | p => P
+                                | _ => False
+                                end)
+  (at level 200, p pattern).
+
 Definition denv := list Dom.
 
-Definition Sem := denv -> ty -> Dom.
-
-Definition DTop : Dom := fun _ => True.
-Definition DBot : Dom := fun _ => False.
-Hint Unfold DTop : dsub.
-Hint Unfold DBot : dsub.
+Notation DTop  := (fun _ => True).
+Notation DBot  := (fun _ => False).
 
 Definition DSel (x : id) (ρ : denv) : Dom :=
   match indexr x ρ with
@@ -329,39 +332,25 @@ Hint Unfold DSel : dsub.
 
 Variable val_term : vl -> tm. (* TODO turns value into syntactic closed term*)
 
-Definition DMem (D1 D2 : Dom) : Dom :=
-  fun v =>
-    match v with
-    | (vty γ T) => exists X, D1 ⊆ X /\ X ⊆ D2 /\ (forall v, X v -> has_type [] (val_term v) T) (* TODO fix the side condition *)
-    | _         => False
-    end.
-Hint Unfold DMem : dsub.
-
-Definition ℰ (ty_interp : Sem) (ρ : denv) (T : ty) (γ : venv) (t : tm) : Prop :=
-  exists k, exists v, eval k γ t = Done v /\ (ty_interp ρ T v).
-Hint Unfold ℰ : dsub.
-
-Definition DAll (ty_interp : Sem) (ρ : denv) (T1 T2 : ty) : Dom :=
-  fun v =>
-    match v with
-    | vabs γ _ t =>
-      let D := (ty_interp ρ T1) in
-      forall v, D v -> ℰ (ty_interp) (D :: ρ) (open' γ T2) (v :: γ) t
-    | _          => False
-    end.
-Hint Unfold DAll : dsub.
-
-(* idea: can syntactic opening be interpreted by semantic env extension as in NbE?*)
-
-Definition ty_interp (ty_interp' : Sem) (ρ : denv) (T : ty) : Dom :=
+Require Coq.Program.Wf.
+Program Fixpoint ty_interp (ρ : denv) (T : ty) {measure (tsize_flat T)} : Dom :=
   match T with
   | TTop          => DTop
   | TBot          => DBot
-  | TAll T1 T2    => DAll (ty_interp') ρ T1 T2
+  | TAll T1 T2    => (* DAll (ty_interp') ρ T1 T2 *)
+    {{ '(vabs γ _ t) | let D := (@ty_interp ρ T1 _) in
+                      forall v, D v -> exists k, exists v, eval k γ t = Done v /\ (@ty_interp (D :: ρ) (open' γ T2) _ v) }}
   | TSel (varF x) => DSel x ρ (* TODO what about varB? *)
-  | TMem T1 T2    => DMem (ty_interp' ρ T1) (ty_interp' ρ T2)
+  | TMem T1 T2    =>
+    {{ '(vty γ T) | exists X, (@ty_interp ρ T1 _) ⊆ X /\ X ⊆ (@ty_interp ρ T2 _) /\ (forall v, X v -> has_type [] (val_term v) T) }} (* TODO fix the side condition *)
   | _             => DBot
   end.
+Next Obligation. simpl. omega. Qed.
+Next Obligation. simpl. unfold open'. rewrite <-open_preserves_size. omega. Qed.
+Next Obligation. simpl. omega. Qed.
+Next Obligation. simpl. omega. Qed.
+Solve All  Obligations with repeat split; intros; discriminate.
+
 
 (* well-founded relation *)
 Definition R (T1 T2 : ty) : Prop := (tsize_flat T1) < (tsize_flat T2).
