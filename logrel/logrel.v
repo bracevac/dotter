@@ -286,10 +286,10 @@ Definition evaln gamma e v := exists nm, forall n, n > nm -> eval n gamma e = Do
 
 Fixpoint tsize_flat(T: ty) :=
   match T with
-    | TTop => 1
-    | TBot => 1
+    | TTop => 0
+    | TBot => 0
     | TAll T1 T2 => S (tsize_flat T1 + tsize_flat T2)
-    | TSel _ => 1
+    | TSel _ => 0
     | TMem T1 T2 => S (tsize_flat T1 + tsize_flat T2)
     (* | TBind T => S (tsize_flat T) *)
     (* | TAnd T1 T2 => S (tsize_flat T1 + tsize_flat T2) *)
@@ -301,58 +301,88 @@ Proof.
   destruct v; simpl; destruct (beq_nat j i); eauto.
 Qed.
 
+Declare Scope dsub.
+
 Definition Dom := vl -> Prop.
 
 Definition subset (D1 D2 : Dom) : Prop := forall v, D1 v -> D2 v.
+Hint Unfold subset : dsub.
 Notation "D1 ⊆ D2" := (subset D1 D2) (at level 75).
-Notation "v ∈ D" := (D v) (at level 75).
-Notation "⟨ H , v ⟩ ∈ D" := (D H v) (at level 75).
+(* Notation "v ∈ D" := (D v) (at level 75). *)
+(* Notation "⟨ H , v ⟩ ∈ D" := (D H v) (at level 75). *)
 
 Definition denv := list Dom.
 
 Definition Sem := denv -> ty -> Dom.
 
-Definition TOP : Dom := fun _ => True.
-Definition BOT : Dom := fun _ => False.
+Definition DTop : Dom := fun _ => True.
+Definition DBot : Dom := fun _ => False.
+Hint Unfold DTop : dsub.
+Hint Unfold DBot : dsub.
 
-Definition TSEL (x : id) (ρ : denv) : Dom :=
+Definition DSel (x : id) (ρ : denv) : Dom :=
   match indexr x ρ with
     | Some D => D
-    | None   => BOT
+    | None   => DBot
   end.
+Hint Unfold DSel : dsub.
 
 Variable val_term : vl -> tm. (* TODO turns value into syntactic closed term*)
 
-Definition TMEM (D1 D2 : Dom) : Dom :=
+Definition DMem (D1 D2 : Dom) : Dom :=
   fun v =>
     match v with
-    | (vty γ T) => exists X, D1 ⊆ X /\ X ⊆ D2 /\ (forall v, v ∈ X -> has_type [] (val_term v) T) (* TODO fix the side condition *)
+    | (vty γ T) => exists X, D1 ⊆ X /\ X ⊆ D2 /\ (forall v, X v -> has_type [] (val_term v) T) (* TODO fix the side condition *)
     | _         => False
     end.
+Hint Unfold DMem : dsub.
 
 Definition ℰ (ty_interp : Sem) (ρ : denv) (T : ty) (γ : venv) (t : tm) : Prop :=
-  exists k, exists v, eval k γ t = Done v /\ v ∈ (ty_interp ρ T).
+  exists k, exists v, eval k γ t = Done v /\ (ty_interp ρ T v).
+Hint Unfold ℰ : dsub.
 
-Definition TALL (ty_interp : Sem) (ρ : denv) (T1 T2 : ty) : Dom :=
+Definition DAll (ty_interp : Sem) (ρ : denv) (T1 T2 : ty) : Dom :=
   fun v =>
     match v with
     | vabs γ _ t =>
       let D := (ty_interp ρ T1) in
-      forall v, v ∈ D -> ⟨ (v :: γ) , t ⟩ ∈ (ℰ (ty_interp) (D :: ρ) (open' γ T2))
+      forall v, D v -> ℰ (ty_interp) (D :: ρ) (open' γ T2) (v :: γ) t
     | _          => False
     end.
+Hint Unfold DAll : dsub.
 
 (* idea: can syntactic opening be interpreted by semantic env extension as in NbE?*)
 
 Definition ty_interp (ty_interp' : Sem) (ρ : denv) (T : ty) : Dom :=
   match T with
-  | TTop          => TOP
-  | TBot          => BOT
-  | TAll T1 T2    => TALL (ty_interp') ρ T1 T2
-  | TSel (varF x) => TSEL x ρ (* TODO what about varB? *)
-  | TMem T1 T2    => TMEM (ty_interp' ρ T1) (ty_interp' ρ T2)
-  | _             => BOT
+  | TTop          => DTop
+  | TBot          => DBot
+  | TAll T1 T2    => DAll (ty_interp') ρ T1 T2
+  | TSel (varF x) => DSel x ρ (* TODO what about varB? *)
+  | TMem T1 T2    => DMem (ty_interp' ρ T1) (ty_interp' ρ T2)
+  | _             => DBot
   end.
+
+(* well-founded relation *)
+Definition R (T1 T2 : ty) : Prop := (tsize_flat T1) < (tsize_flat T2).
+Hint Unfold R : dsub.
+
+Hint Constructors Acc : dsub.
+
+Lemma wfR' : forall n T, tsize_flat T <= n -> Acc R T.
+Proof.
+  unfold R.
+  induction n.
+  - destruct T; intros; constructor; intros; simpl in *; try omega.
+  - intros. destruct T; constructor; intros; simpl in *; try omega; apply IHn; omega.
+Defined.
+
+Theorem wfR : well_founded R.
+Proof.
+  red. intros. eapply wfR'. eauto.
+Defined.
+
+
 
 (* TODO construct the fixpoint *)
 Fail Fixpoint val_type (ρ : denv) (T : ty) : Dom := ty_interp (val_type) ρ T.
