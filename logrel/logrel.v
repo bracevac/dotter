@@ -486,7 +486,7 @@ Proof.
   eauto.
 Qed.
 
-Theorem strong_normalization : forall {Γ t T}, has_type Γ t T -> forall{γ ρ}, 𝒞𝓉𝓍 Γ ρ γ -> exists k v, eval k γ t = Done v.
+Theorem strong_normalization : forall {Γ t T}, has_type Γ t T -> forall{ρ}, 𝒞𝓉𝓍 Γ ρ -> forall{γ}, ℰ𝓃𝓋 ρ γ -> exists k v, eval k γ t = Done v.
 Proof.
   intros.
   eapply escape.
