@@ -279,8 +279,31 @@ Fixpoint eval(fuel : nat)(γ : venv)(t : tm){struct fuel}: Result :=
     end
   end.
 
-Definition evaln γ e v := exists nm, forall n, n > nm -> eval n γ e = Done v.
+Lemma fuel_monotone : forall {m t γ  v}, eval m γ t = Done v -> forall n, m <= n -> eval n γ t = Done v.
+Proof.
+  induction m; intros.
+  - inversion H.
+  - destruct n. lia.
+    destruct t; try solve [inversion H; eauto]; try lia.
+    inversion H.
+    simpl.
+    remember (eval m γ t2) as t2m.
+    symmetry in Heqt2m.
+    remember (eval m γ t1) as t1m.
+    symmetry in Heqt1m.
+    destruct t2m; destruct t1m; eauto.
+    apply IHm with (n := n) in Heqt2m; try lia.
+    apply IHm with (n := n) in Heqt1m; try lia.
+    rewrite Heqt2m. rewrite Heqt1m.
+    destruct v1; eauto;
+    rewrite H2.
+    apply IHm with (n := n) in H2; try lia.
+    rewrite H2.
+    reflexivity.
+    all:  inversion H2.
+Qed.
 
+Definition evaln γ e v := exists nm, forall n, n > nm -> eval n γ e = Done v.
 
 (* ### Semantic Interpretation of Types (Logical Relations) ### *)
 
@@ -345,7 +368,7 @@ Program Fixpoint ty_interp (ρ : denv) (T : ty) {measure (tsize_flat T)} : Dom :
   match T with
   | TTop          => DTop
   | TBot          => DBot
-  | TAll T1 T2    => (* DAll (ty_interp') ρ T1 T2 *)
+  | TAll T1 T2    =>
     {{ '(vabs γ _ t) | let D := (@ty_interp ρ T1 _) in
                        forall vx, vx ∈ D -> ⟨ (vx :: γ) , t  ⟩ ∈ ℰ (@ty_interp (D :: ρ) (open' γ T2) _) }}
   | TSel (varF x) => DSel x ρ (* TODO what about varB? *)
@@ -432,4 +455,15 @@ Ltac prim_unfold_interp :=
   unfold val_type; rewrite Fix_eq;
   [ simpl; fold val_type | apply val_type_extensional ].
 
-(* Lemma fundamental : forall Γ e T, has_type Γ e T -> forall γ, (* γ ∈ ⟦ Γ ⟧ *) *)
+Lemma fundamental : forall Γ t T, has_type Γ t T -> forall γ ρ, (* ρ , γ ∈ ⟦ Γ ⟧ -> *) ⟨ γ , t ⟩ ∈ ℰ (val_type T ρ).
+Admitted.
+
+Lemma escape : forall t T γ ρ, ⟨ γ , t ⟩ ∈ ℰ (val_type T ρ) -> exists k v, eval k γ t = Done v.
+Proof.
+  intros.
+  unfold ℰ in H.
+  destruct H as [k [v [He H2]]].
+  eauto.
+Qed.
+
+(* Theorem strong_normalization : forall Γ t T, has_type Γ t T -> forall γ, ρ , γ ∈ ⟦ Γ ⟧ -> exists k v, eval k γ t = Done v. *)
