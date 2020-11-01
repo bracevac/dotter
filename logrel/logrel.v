@@ -352,26 +352,74 @@ Next Obligation. simpl. omega. Qed.
 Solve All  Obligations with repeat split; intros; discriminate.
 
 
-(* well-founded relation *)
-Definition R (T1 T2 : ty) : Prop := (tsize_flat T1) < (tsize_flat T2).
-Hint Unfold R : dsub.
+(* Experiment with well-founded recursion.
+
+   This solves the problem of Program Fixpoint unfoldings being
+   incomprehensible and a proof of a manual unfolding theorem being
+   unbearably slow. Kudos to Chris Casinghino, whose Coq artifact
+   for the Zombie language inspired this approach.
+*)
+
+(* well-founded relation which captures the recursive calls in the interpretation val_type. *)
+Inductive R : ty -> ty -> Prop :=
+| RAll1 : forall T1 T2, R T1 (TAll T1 T2)
+| RAll2 : forall T1 T2 A (γ : list A), R (open' γ T2) (TAll T1 T2)
+| RMem1 : forall T1 T2, R T1 (TMem T1 T2)
+| RMem2 : forall T1 T2, R T2 (TMem T1 T2)
+.
 
 Hint Constructors Acc : dsub.
+Hint Constructors R : dsub.
 
 Lemma wfR' : forall n T, tsize_flat T <= n -> Acc R T.
 Proof.
-  unfold R.
   induction n.
-  - destruct T; intros; constructor; intros; simpl in *; try omega.
-  - intros. destruct T; constructor; intros; simpl in *; try omega; apply IHn; omega.
+  - destruct T; intros; constructor; intros; simpl in *; inversion H0; try omega.
+  - intros. destruct T; constructor; intros; simpl in *; inversion H0; subst; apply IHn; try omega.
+    unfold open'. rewrite <- open_preserves_size. omega.
 Defined.
 
 Theorem wfR : well_founded R.
 Proof.
-  red. intros. eapply wfR'. eauto.
+  red. intros T. eapply wfR'. auto.
 Defined.
 
+Definition val_type_naked (T : ty) : (forall T', R T' T -> denv -> Dom) -> denv -> Dom :=
+  match T with
+  | TTop          => fun _ _ => DTop
+  | TBot          => fun _ _ => DBot
+  | TAll T1 T2    => fun val_type ρ =>
+      {{ '(vabs γ _ t) | let D := (val_type T1 (RAll1 _ _) ρ) in
+                        forall v, D v -> exists k, exists v, eval k γ t = Done v /\ (val_type (open' γ T2) (RAll2 _ _ _ _) (D :: ρ) v) }}
+  | TSel (varF x) => fun _ ρ => DSel x ρ (* TODO what about varB? *)
+  | TMem T1 T2    => fun val_type ρ =>
+    {{ '(vty γ T) | exists X, (val_type T1 (RMem1 _ _) ρ) ⊆ X /\ X ⊆ (val_type T2 (RMem2 _ _) ρ) /\ (forall v, X v -> has_type [] (val_term v) T) }} (* TODO fix the side condition *)
+  | _             => fun _ _ => DBot
+  end.
 
+Definition val_type : ty -> denv -> Dom :=
+  Fix wfR (fun _ => denv -> Dom) val_type_naked.
 
-(* TODO construct the fixpoint *)
-Fail Fixpoint val_type (ρ : denv) (T : ty) : Dom := ty_interp (val_type) ρ T.
+(* Providing an unfolding requires extensionality. *)
+Axiom extensionality : forall (A : Type) (B : A -> Type)
+                              (f g : forall a : A, B a),
+     (forall a : A, f a = g a) -> f = g.
+
+Theorem val_type_extensional :
+  forall (T1 : ty) (f g : forall T2 : ty, R T2 T1 -> denv -> Dom),
+        (forall (T2 : ty) (r : R T2 T1), f T2 r = g T2 r)
+     -> val_type_naked T1 f = val_type_naked T1 g.
+Proof.
+  intros;
+  assert (f = g) by (eauto using extensionality); subst; eauto.
+Qed.
+Hint Resolve val_type_extensional.
+
+(* unfolding tactics for hypotheses and goal *)
+Tactic Notation "prim_unfold_val_type" "in" hyp(H) :=
+  unfold val_type in H; rewrite Fix_eq in H;
+  [ simpl in H; fold val_type in H | apply val_type_extensional ].
+
+Ltac prim_unfold_interp :=
+  unfold val_type; rewrite Fix_eq;
+  [ simpl; fold val_type | apply val_type_extensional ].
