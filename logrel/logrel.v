@@ -456,19 +456,26 @@ Ltac prim_unfold_interp :=
   [ simpl; fold val_type | apply val_type_extensional ].
 
 
-Inductive 𝒞𝓉𝓍 : tenv -> denv -> venv -> Prop :=
-  | cv_nil :
-      𝒞𝓉𝓍 [] [] []
-  | cv_cons : forall {Γ γ ρ T v},
-      𝒞𝓉𝓍 Γ ρ γ ->
-      (* TODO should we demand ty_wf Gamma T here?*)
-      v ∈ (val_type T ρ) ->
-      𝒞𝓉𝓍 (T :: Γ) ((val_type T ρ) :: ρ) (v :: γ)
+Inductive 𝒞𝓉𝓍 : tenv -> denv -> Prop :=
+| 𝒞𝓉𝓍_nil :
+    𝒞𝓉𝓍 [] []
+| 𝒞𝓉𝓍_cons : forall {Γ ρ T},
+    𝒞𝓉𝓍 Γ ρ ->
+    (* TODO should we demand ty_wf Gamma T here?*)
+    𝒞𝓉𝓍 (T :: Γ) ((val_type T ρ) :: ρ)
 .
 
+Inductive ℰ𝓃𝓋 : denv -> venv -> Prop :=
+| ℰ𝓃𝓋_nil :
+    ℰ𝓃𝓋 [] []
+| ℰ𝓃𝓋_cons : forall {γ ρ v D},
+    ℰ𝓃𝓋 ρ γ ->
+    v ∈ D ->
+    ℰ𝓃𝓋 (D :: ρ) (v :: γ)
+.
 
-Lemma fundamental :     forall {Γ t T}, has_type Γ t T -> forall{ρ γ}, 𝒞𝓉𝓍 Γ ρ γ -> ⟨ γ , t ⟩ ∈ ℰ (val_type T ρ)
-with  fundamental_stp : forall {Γ S T}, stp Γ S T      -> forall{ρ γ}, 𝒞𝓉𝓍 Γ ρ γ -> (val_type S ρ) ⊆ (val_type T ρ).
+Lemma fundamental :     forall {Γ t T}, has_type Γ t T -> forall{ρ}, 𝒞𝓉𝓍 Γ ρ -> forall{γ}, ℰ𝓃𝓋 ρ γ -> ⟨ γ , t ⟩ ∈ ℰ (val_type T ρ)
+with  fundamental_stp : forall {Γ S T}, stp Γ S T      -> forall{ρ}, 𝒞𝓉𝓍 Γ ρ -> (val_type S ρ) ⊆ (val_type T ρ).
 Admitted.
 
 Lemma escape : forall {t T γ ρ}, ⟨ γ , t ⟩ ∈ ℰ (val_type T ρ) -> exists k v, eval k γ t = Done v.
