@@ -279,7 +279,7 @@ Fixpoint eval(fuel : nat)(γ : venv)(t : tm){struct fuel}: Result :=
     end
   end.
 
-Lemma fuel_monotone : forall {m t γ  v}, eval m γ t = Done v -> forall n, m <= n -> eval n γ t = Done v.
+Lemma fuel_monotone : forall {m t γ v}, eval m γ t = Done v -> forall n, m <= n -> eval n γ t = Done v.
 Proof.
   induction m; intros.
   - inversion H.
@@ -455,10 +455,23 @@ Ltac prim_unfold_interp :=
   unfold val_type; rewrite Fix_eq;
   [ simpl; fold val_type | apply val_type_extensional ].
 
-Lemma fundamental : forall Γ t T, has_type Γ t T -> forall γ ρ, (* ρ , γ ∈ ⟦ Γ ⟧ -> *) ⟨ γ , t ⟩ ∈ ℰ (val_type T ρ).
+
+Inductive 𝒞𝓉𝓍 : tenv -> denv -> venv -> Prop :=
+  | cv_nil :
+      𝒞𝓉𝓍 [] [] []
+  | cv_cons : forall {Γ γ ρ T v},
+      𝒞𝓉𝓍 Γ ρ γ ->
+      (* TODO should we demand ty_wf Gamma T here?*)
+      v ∈ (val_type T ρ) ->
+      𝒞𝓉𝓍 (T :: Γ) ((val_type T ρ) :: ρ) (v :: γ)
+.
+
+
+Lemma fundamental :     forall {Γ t T}, has_type Γ t T -> forall{ρ γ}, 𝒞𝓉𝓍 Γ ρ γ -> ⟨ γ , t ⟩ ∈ ℰ (val_type T ρ)
+with  fundamental_stp : forall {Γ S T}, stp Γ S T      -> forall{ρ γ}, 𝒞𝓉𝓍 Γ ρ γ -> (val_type S ρ) ⊆ (val_type T ρ).
 Admitted.
 
-Lemma escape : forall t T γ ρ, ⟨ γ , t ⟩ ∈ ℰ (val_type T ρ) -> exists k v, eval k γ t = Done v.
+Lemma escape : forall {t T γ ρ}, ⟨ γ , t ⟩ ∈ ℰ (val_type T ρ) -> exists k v, eval k γ t = Done v.
 Proof.
   intros.
   unfold ℰ in H.
@@ -466,4 +479,9 @@ Proof.
   eauto.
 Qed.
 
-(* Theorem strong_normalization : forall Γ t T, has_type Γ t T -> forall γ, ρ , γ ∈ ⟦ Γ ⟧ -> exists k v, eval k γ t = Done v. *)
+Theorem strong_normalization : forall {Γ t T}, has_type Γ t T -> forall{γ ρ}, 𝒞𝓉𝓍 Γ ρ γ -> exists k v, eval k γ t = Done v.
+Proof.
+  intros.
+  eapply escape.
+  eapply fundamental; eauto.
+Qed.
