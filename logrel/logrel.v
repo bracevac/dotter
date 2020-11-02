@@ -374,7 +374,7 @@ Hint Unfold ℰ : dsub.
 
 Variable val_term : vl -> tm. (* TODO turns value into syntactic closed term*)
 
-(* Experiment with well-founded recursion.
+(* Well-founded recursion.
 
    This solves the problem of Program Fixpoint unfoldings being
    incomprehensible and a proof of a manual unfolding theorem being
@@ -413,7 +413,7 @@ Definition val_type_naked (T : ty) : (forall T', R T' T -> denv -> Dom) -> denv 
   | TAll T1 T2    => fun val_type ρ =>
     {{ '(vabs γ _ t) | let D := (val_type T1 RAll1 ρ) in
                        forall vx, vx ∈ D -> ⟨ (vx :: γ) , t  ⟩ ∈ ℰ (val_type (open' γ T2) RAll2 (D :: ρ)) }}
-  | TSel (varF x) => fun _ ρ => DSel x ρ (* TODO what about varB? *)
+  | TSel (varF x) => fun _ ρ => DSel x ρ
   | TMem T1 T2    => fun val_type ρ =>
     {{ '(vty γ T) | exists X, (val_type T1 RMem1 ρ) ⊆ X /\ X ⊆ (val_type T2 RMem2 ρ) /\ (forall v, v ∈ X -> has_type [] (val_term v) T) }} (* TODO fix the side condition *)
   | _             => fun _ _ => DBot
@@ -485,10 +485,8 @@ Proof.
     exists (val_type T ρ).
     split. apply subset_refl.
     split. apply subset_refl.
-
-    inversion H0; subst; inversion H1; subst.
-    eauto.
-    -
+    (* T.S:  forall v : vl, val_type T ρ v -> has_type [] (val_term v) T   *)
+Admitted.
     auto.
     -- (* tvar *)
 
