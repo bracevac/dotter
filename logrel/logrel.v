@@ -345,6 +345,17 @@ Notation "{{ ' p | P }}" := (fun v => match v with
                                 end)
   (at level 200, p pattern).
 
+Lemma subset_refl : forall X, X ⊆ X.
+Proof.
+  intros. unfold subset. auto.
+Qed.
+Hint Resolve subset_refl : dsub.
+
+Lemma subset_trans : forall X Y Z, X ⊆ Y -> Y ⊆ Z -> X ⊆ Z.
+Proof.
+  intros. unfold subset. auto.
+Qed.
+
 Definition denv := list Dom.
 
 Notation DTop  := (fun _ => True).
@@ -362,26 +373,6 @@ Definition ℰ (D : Dom) (γ : venv) (t : tm) : Prop :=
 Hint Unfold ℰ : dsub.
 
 Variable val_term : vl -> tm. (* TODO turns value into syntactic closed term*)
-
-Require Coq.Program.Wf.
-Program Fixpoint ty_interp (ρ : denv) (T : ty) {measure (tsize_flat T)} : Dom :=
-  match T with
-  | TTop          => DTop
-  | TBot          => DBot
-  | TAll T1 T2    =>
-    {{ '(vabs γ _ t) | let D := (@ty_interp ρ T1 _) in
-                       forall vx, vx ∈ D -> ⟨ (vx :: γ) , t  ⟩ ∈ ℰ (@ty_interp (D :: ρ) (open' γ T2) _) }}
-  | TSel (varF x) => DSel x ρ (* TODO what about varB? *)
-  | TMem T1 T2    =>
-    {{ '(vty γ T) | exists X, (@ty_interp ρ T1 _) ⊆ X /\ X ⊆ (@ty_interp ρ T2 _) /\ (forall v, v ∈ X -> has_type [] (val_term v) T) }} (* TODO fix the side condition *)
-  | _             => DBot
-  end.
-Next Obligation. simpl. lia. Qed.
-Next Obligation. simpl. unfold open'. rewrite <-open_preserves_size. lia. Qed.
-Next Obligation. simpl. lia. Qed.
-Next Obligation. simpl. lia. Qed.
-Solve All  Obligations with repeat split; intros; discriminate.
-
 
 (* Experiment with well-founded recursion.
 
@@ -451,7 +442,7 @@ Tactic Notation "prim_unfold_val_type" "in" hyp(H) :=
   unfold val_type in H; rewrite Fix_eq in H;
   [ simpl in H; fold val_type in H | apply val_type_extensional ].
 
-Ltac prim_unfold_interp :=
+Ltac prim_unfold_val_type :=
   unfold val_type; rewrite Fix_eq;
   [ simpl; fold val_type | apply val_type_extensional ].
 
@@ -476,7 +467,35 @@ Inductive ℰ𝓃𝓋 : denv -> venv -> Prop :=
 
 Lemma fundamental :     forall {Γ t T}, has_type Γ t T -> forall{ρ}, 𝒞𝓉𝓍 Γ ρ -> forall{γ}, ℰ𝓃𝓋 ρ γ -> ⟨ γ , t ⟩ ∈ ℰ (val_type T ρ)
 with  fundamental_stp : forall {Γ S T}, stp Γ S T      -> forall{ρ}, 𝒞𝓉𝓍 Γ ρ -> (val_type S ρ) ⊆ (val_type T ρ).
-Admitted.
+Proof.
+  - (* fundamental *)
+    intros Γ t T Hty.
+    induction Hty.
+    Focus 2. (* TMem *)
+    intros.
+    unfold ℰ.
+    prim_unfold_val_type.
+    unfold elem.
+    unfold elem2.
+    exists 1.
+    exists (vty γ T).
+    split.
+    simpl.
+    reflexivity.
+    exists (val_type T ρ).
+    split. apply subset_refl.
+    split. apply subset_refl.
+
+    inversion H0; subst; inversion H1; subst.
+    eauto.
+    -
+    auto.
+    -- (* tvar *)
+
+
+  - (* fundamental_stp *)
+Qed.
+
 
 Lemma escape : forall {t T γ ρ}, ⟨ γ , t ⟩ ∈ ℰ (val_type T ρ) -> exists k v, eval k γ t = Done v.
 Proof.
