@@ -235,6 +235,11 @@ with
   (* TODO subtyping for recursive types and intersections *)
 .
 
+Scheme has_type_stp_mut := Induction for has_type Sort Prop
+with stp_has_type_mut := Induction for stp Sort Prop.
+
+Combined Scheme ind_derivations from has_type_stp_mut, stp_has_type_mut.
+
 
 (* ### Evaluation (Big-Step Semantics) ### *)
 
@@ -343,7 +348,11 @@ Notation "{{ ' p | P }}" := (fun v => match v with
                                 | p => P
                                 | _ => False
                                 end)
-  (at level 200, p pattern).
+                           (at level 200, p pattern).
+
+Notation "{{ x | P }}" := (fun x => P)
+  (at level 200, x ident).
+
 
 Lemma subset_refl : forall X, X ⊆ X.
 Proof.
@@ -351,7 +360,7 @@ Proof.
 Qed.
 Hint Resolve subset_refl : dsub.
 
-Lemma subset_trans : forall X Y Z, X ⊆ Y -> Y ⊆ Z -> X ⊆ Z.
+Lemma subset_trans : forall {X Y Z}, X ⊆ Y -> Y ⊆ Z -> X ⊆ Z.
 Proof.
   intros. unfold subset. auto.
 Qed.
@@ -360,13 +369,6 @@ Definition denv := list Dom.
 
 Notation DTop  := (fun _ => True).
 Notation DBot  := (fun _ => False).
-
-Definition DSel (x : id) (ρ : denv) : Dom :=
-  match indexr x ρ with
-    | Some D => D
-    | None   => DBot
-  end.
-Hint Unfold DSel : dsub.
 
 Definition ℰ (D : Dom) (γ : venv) (t : tm) : Prop :=
   exists k, exists v, eval k γ t = Done v /\ v ∈ D.
@@ -406,21 +408,43 @@ Proof.
   red. intros T. eapply wfR'. auto.
 Defined.
 
-Definition val_type_naked (T : ty) : (forall T', R T' T -> denv -> Dom) -> denv -> Dom :=
+Definition Abs : tenv -> Dom -> Dom -> vl -> Dom -> Prop :=
+  fun Γ DL DU v X =>
+    match v with
+    | (vty gamma T) => DL ⊆ X /\ X ⊆ DU /\ (forall v, v ∈ X -> has_type Γ (val_term v) T)
+    | _         => False
+    end.
+Hint Unfold Abs : dsub.
+
+Definition val_type_naked (T : ty) : (forall T', R T' T -> tenv -> denv -> Dom) -> tenv -> denv -> Dom :=
   match T with
-  | TTop          => fun _ _ => DTop
-  | TBot          => fun _ _ => DBot
-  | TAll T1 T2    => fun val_type ρ =>
-    {{ '(vabs γ _ t) | let D := (val_type T1 RAll1 ρ) in
-                       forall vx, vx ∈ D -> ⟨ (vx :: γ) , t  ⟩ ∈ ℰ (val_type (open' γ T2) RAll2 (D :: ρ)) }}
-  | TSel (varF x) => fun _ ρ => DSel x ρ
-  | TMem T1 T2    => fun val_type ρ =>
-    {{ '(vty γ T) | exists X, (val_type T1 RMem1 ρ) ⊆ X /\ X ⊆ (val_type T2 RMem2 ρ) /\ (forall v, v ∈ X -> has_type [] (val_term v) T) }} (* TODO fix the side condition *)
-  | _             => fun _ _ => DBot
+  | TTop          => fun _ _ _ => DTop
+
+  (*
+       let x = <type T> in e
+    == unpack α,x = (T, <type T>) in e[α/x.Type]
+    *)
+  | TAll (TMem T1 T2) T3 => fun val_type Γ ρ =>
+    {{ '(vabs γ _ t) | forall γ' T X , ⟨ (vty γ' T) , X  ⟩ ∈ (Abs Γ (val_type T1 RMem1 Γ ρ) (val_type T2 RMem2 Γ ρ)) ->
+                                 ⟨ ((vty γ' T) :: γ) , t ⟩ ∈ ℰ (val_type (open' γ T3) RAll2 ((TMem T1 T2) :: Γ) (X :: ρ)) }}
+
+  | TAll T1 T2    => fun val_type Γ ρ =>
+                       {{ '(vabs γ _ t) | let D := (val_type T1 RAll1 Γ ρ) in
+                                          forall vx, vx ∈ D -> ⟨ (vx :: γ) , t  ⟩ ∈ ℰ (val_type (open' γ T2) RAll2 (T1 :: Γ)(D :: ρ)) }}
+
+  | TSel (varF x) => fun _ Γ ρ => match indexr x ρ with
+                                | Some D => D
+                                | None   => DBot
+                                end
+
+  | TMem T1 T2    => fun val_type Γ ρ =>
+                       {{ v | exists X, ⟨ v , X  ⟩ ∈ Abs Γ (val_type T1 RMem1 Γ ρ) (val_type T2 RMem2 Γ ρ)   }}
+
+  | _             => fun _ _ _ => DBot
   end.
 
-Definition val_type : ty -> denv -> Dom :=
-  Fix wfR (fun _ => denv -> Dom) val_type_naked.
+Definition val_type : ty -> tenv -> denv -> Dom :=
+  Fix wfR (fun _ => tenv -> denv -> Dom) val_type_naked.
 
 (* Providing an unfolding requires extensionality. *)
 Axiom extensionality : forall (A : Type) (B : A -> Type)
@@ -428,7 +452,7 @@ Axiom extensionality : forall (A : Type) (B : A -> Type)
      (forall a : A, f a = g a) -> f = g.
 
 Theorem val_type_extensional :
-  forall (T1 : ty) (f g : forall T2 : ty, R T2 T1 -> denv -> Dom),
+  forall (T1 : ty) (f g : forall T2 : ty, R T2 T1 -> tenv -> denv -> Dom),
         (forall (T2 : ty) (r : R T2 T1), f T2 r = g T2 r)
      -> val_type_naked T1 f = val_type_naked T1 g.
 Proof.
@@ -453,7 +477,7 @@ Inductive 𝒞𝓉𝓍 : tenv -> denv -> Prop :=
 | 𝒞𝓉𝓍_cons : forall {Γ ρ T},
     𝒞𝓉𝓍 Γ ρ ->
     (* TODO should we demand ty_wf Gamma T here?*)
-    𝒞𝓉𝓍 (T :: Γ) ((val_type T ρ) :: ρ)
+    𝒞𝓉𝓍 (T :: Γ) ((val_type T Γ ρ) :: ρ)
 .
 
 Inductive ℰ𝓃𝓋 : denv -> venv -> Prop :=
@@ -465,9 +489,86 @@ Inductive ℰ𝓃𝓋 : denv -> venv -> Prop :=
     ℰ𝓃𝓋 (D :: ρ) (v :: γ)
 .
 
-Lemma fundamental :     forall {Γ t T}, has_type Γ t T -> forall{ρ}, 𝒞𝓉𝓍 Γ ρ -> forall{γ}, ℰ𝓃𝓋 ρ γ -> ⟨ γ , t ⟩ ∈ ℰ (val_type T ρ)
-with  fundamental_stp : forall {Γ S T}, stp Γ S T      -> forall{ρ}, 𝒞𝓉𝓍 Γ ρ -> (val_type S ρ) ⊆ (val_type T ρ).
+
+Lemma fundamental' :  (forall {Γ t T}, has_type Γ t T -> forall{ρ}, 𝒞𝓉𝓍 Γ ρ -> forall{γ}, ℰ𝓃𝓋 ρ γ -> ⟨ γ , t ⟩ ∈ ℰ (val_type T Γ ρ))
+                    /\ (forall {Γ S T}, stp Γ S T     -> forall{ρ}, 𝒞𝓉𝓍 Γ ρ -> forall{γ}, ℰ𝓃𝓋 ρ γ -> (val_type S Γ ρ) ⊆ (val_type T Γ ρ)).
 Proof.
+  apply ind_derivations.
+  Check ind_derivations.
+  Focus 2. (* TMem *)
+  intros Γ T Hty ρ HΓρ γ Hργ.
+  unfold ℰ. unfold elem. unfold elem2. prim_unfold_val_type.
+  exists 1.
+  exists (vty γ T).
+  split. simpl. reflexivity.
+  (exists (val_type T Γ ρ)).
+  split. apply subset_refl. split. apply subset_refl.
+  admit. (* forall v : vl, v ∈ val_type T Γ ρ -> has_type Γ (val_term v) T *)
+
+  Focus 9. (* Stp_sel 1*)
+  intros Γ x T Hty Hfund ρ HΓρ γ Hργ.
+  unfold ℰ in *. unfold elem in *. unfold elem2 in *.
+  specialize (Hfund ρ HΓρ γ Hργ).
+  destruct Hfund as [k [vTy [HevalTy HvTyinTMem]]].
+  prim_unfold_val_type in HvTyinTMem.
+  destruct vTy. inversion HvTyinTMem.
+  destruct HvTyinTMem as [X [TsubX [ XsubTop Xhastype] ]].
+  red.
+  intros.
+  prim_unfold_val_type.
+  inversion Hty; subst.
+  - assert (Hrho : exists Γ1 Γ2 ρ1 ρ2, indexr x ρ = Some (val_type (TMem T TTop) Γ2 ρ2)
+                                       /\  ρ = ρ1 ++ ((val_type (TMem T TTop) Γ2 ρ2) :: ρ2)
+                                       /\  Γ = Γ1 ++ (TMem T TTop :: Γ2)
+                                       /\  length ρ2 = x /\ length Γ2 = x). {
+      admit.
+    }
+    destruct Hrho as [Γ1 [Γ2 [ρ1 [ρ2 [Hrhox [Hrho12 [HG12 [ Hlenrho2 HlenG2 ]]]]]]]].
+    rewrite Hrhox.
+    exists l. exists t.
+    split.
+    prim_unfold_val_type.
+    unfold elem.
+
+    exists X.
+    split.
+    assert (HT : val_type T Γ2 ρ2 ⊆ val_type T Γ ρ). {
+      admit.
+    }
+    apply (subset_trans HT TsubX).
+    split. prim_unfold_val_type. red. auto.
+
+    auto.
+    eauto.
+
+    assumption.
+    apply HX.
+    apply TsubX.
+    assumption.
+    (* subsumption *)
+
+Admitted.
+
+
+
+
+
+
+Theorem fundamental : forall {Γ t T}, has_type Γ t T -> forall{ρ}, 𝒞𝓉𝓍 Γ ρ -> forall{γ}, ℰ𝓃𝓋 ρ γ -> ⟨ γ , t ⟩ ∈ ℰ (val_type T Γ ρ).
+Proof.
+  destruct fundamental' as [fund _ ].
+  apply fund.
+Qed.
+
+Theorem  fundamental_stp : forall {Γ S T}, stp Γ S T -> forall{ρ}, 𝒞𝓉𝓍 Γ ρ -> forall{γ}, ℰ𝓃𝓋 ρ γ -> (val_type S Γ ρ) ⊆ (val_type T Γ ρ).
+Proof.
+  destruct fundamental' as [ _ fundstp ].
+  apply fundstp.
+Qed.
+
+
+
+
   - (* fundamental *)
     intros Γ t T Hty.
     induction Hty.
@@ -479,19 +580,93 @@ Proof.
     unfold elem2.
     exists 1.
     exists (vty γ T).
+    split. simpl. reflexivity.
     split.
+    admit. (* val_type T Γ ρ ⊆ ({{v | has_type Γ (val_term v) T}}) *)
+    admit. (* ({{v | has_type Γ (val_term v) T}}) ⊆ val_type T Γ ρ *)
+
+    admit.
+    admit.
+    admit.
+    admit.
+    admit.
+
+
+  (* fundamental_stp *)
+  - intros Γ S T Hstp.
+    induction Hstp.
+    Focus 4.
+    intros.
+    unfold ℰ in *.
+    unfold elem in *.
+    unfold elem2 in *.
+    specialize (fundamental Γ (tvar (varF x)) (TMem T TTop) H ρ H0 γ H1).
+    destruct fundamental as [k [vTy [HevalTy HvTyinTMem]]].
+    prim_unfold_val_type in HvTyinTMem.
+    destruct vTy. inversion HvTyinTMem.
+    destruct HvTyinTMem as [X [TsubX [XsubTop HX]]].
+    red.
+    intros.
+    prim_unfold_val_type.
+    red.
+    inversion H; subst.
+     (* lookup *)
+      assert (Hrho : exists ρ1 ρ2, indexr x ρ = Some (val_type (TMem T TTop) ρ2)
+                                   /\ ρ = ρ1 ++ ((val_type (TMem T TTop) ρ2) :: ρ2)
+                                   /\ length ρ2 = x).
+      { admit. }
+      destruct Hrho as [ρ1 [ρ2 [Hrhox [Hrho12 Hlenrho2]]]].
+      exists (val_type (TMem T TTop) ρ2).
+      split. assumption.
+      exists l. exists t.
+      split.
+      prim_unfold_val_type.
+      unfold elem.
+      exists X.
+      split.
+      assert (HT : val_type T ρ2 ⊆ val_type T ρ). { admit. }
+      apply (subset_trans HT TsubX).
+      split.
+      eauto.
+      assump tion.
+      apply HX.
+      apply TsubX.
+      assumption.
+    (* subsumption *)
+      exists (indexr x ρ).
+    (*TSel semantics is not just lookup! *)
+    apply fundamental in H.
+    destruct H as [k [v [Heval HTmem]]].
+
+
+    inversion H; subst.
+    -- (*lookup*)
+
+
+      red.
+      intros.
+      prim_unfold_val_type.
+      red.
+      rewrite Hrhox.
+      prim_unfold_val_type.
+      rewrite Hrho12 in H1.
+
+      red.
+      inversion H0; subst.
+      inversion H4.
+      destruct x.
+      simpl in H4.
+    eapply fundamental with (ρ := ρ) in H.
+    destruct H as [k [v [Heval HTmem]]].
+    red.
+    intros.
+    prim_unfold_val_type.
+    prim_unfold_val_type in HTmem.
+    red.
+
     simpl.
-    reflexivity.
-    exists (val_type T ρ).
-    split. apply subset_refl.
-    split. apply subset_refl.
-    (* T.S:  forall v : vl, val_type T ρ v -> has_type [] (val_term v) T   *)
-Admitted.
-    auto.
-    -- (* tvar *)
 
-
-  - (* fundamental_stp *)
+    simpl.
 Qed.
 
 
