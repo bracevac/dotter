@@ -474,7 +474,7 @@ Inductive 𝒞𝓉𝓍 : tenv -> denv -> Prop :=
     𝒞𝓉𝓍 [] []
 | 𝒞𝓉𝓍_cons : forall {Γ ρ T},
     𝒞𝓉𝓍 Γ ρ ->
-    𝒞𝓉𝓍 (T :: Γ) ((val_type T Typ ρ) :: ρ)
+    𝒞𝓉𝓍 (T :: Γ) ((val_type T Typ ρ) :: ρ) (* TODO demand a subtype of T here? *)
 .
 
 Inductive ℰ𝓃𝓋 : denv -> venv -> Prop :=
@@ -571,6 +571,90 @@ Proof.
     destruct IH as [k [v [Heval vinVtyT1 ]]].
     exists k. exists v. split. assumption. eapply IHstp; eauto.
   (*Subtyping*)
+  - (* stp_top *)
+    intros Γ T HTwf ρ HΓρ γ Hργ v vinT.
+    prim_unfold_val_type. auto.
+  - (* stp_bot *)
+    intros Γ T HTwf ρ HΓρ γ Hργ v vinBot.
+    prim_unfold_val_type in vinBot.
+    contradiction.
+  - (* stp_mem *)
+    intros Γ S1 S2 T1 T2 S2subS1 IHS2S1 T1subT2 IHT1T2 ρ HΓρ γ Hργ v vinS1T1.
+    prim_unfold_val_type in vinS1T1. destruct v as [ γ' T t | γ' T ]. contradiction.
+    specialize (IHS2S1 _ HΓρ _ Hργ). specialize (IHT1T2 _ HΓρ _ Hργ).
+    destruct vinS1T1 as [ X [vS1subX XsubvT1 ]].
+    prim_unfold_val_type. exists X. split.
+    eapply subset_trans. eauto. assumption.
+    eapply subset_trans. eauto. assumption.
+  - (* stp_sel1 *)
+    intros Γ x T Hty IH ρ HΓρ γ Hργ v vinT.
+    specialize (IH _ HΓρ _ Hργ).
+    unfold ℰ in *. unfold elem in *. unfold elem2 in *.
+    destruct IH as [k [v' [Heval v'inTMem ]]].
+    prim_unfold_val_type in v'inTMem. destruct v' as [ γ' T' t | γ' T' ]. contradiction.
+    destruct v'inTMem as [X [TsubX XsubTop]].
+    inversion Hty; subst.
+    -- (* t_var *)
+      prim_unfold_val_type.
+      assert (Hrho : exists ρ', indexr x ρ = Some (val_type (TMem T TTop) Typ ρ')). { (* TODO follows from consistent context/environment assumptions *)
+               admit.
+      }
+      destruct Hrho as [ρ' Hrho ].
+      rewrite Hrho.
+      prim_unfold_val_type.
+      exists X. repeat split.
+      unfold elem. apply TsubX. assumption.
+      assert (Hext : val_type T Val ρ' ⊆ val_type T Val ρ). { (* TODO need to show that interpretations are stable after extending ρ', maybe undo specialization of IH *)
+        admit.
+      }
+      eapply subset_trans. eauto. assumption.
+    -- (* t_sub *)
+      (* TODO here we need strong induction on the typing and subtyping assumption of t_sub, need to fix the induction scheme*)
+      admit.
+  - (* stp_sel 2*)
+    intros Γ x T Hty IH ρ HΓρ γ Hργ v vinxType.
+    specialize (IH _ HΓρ _ Hργ).
+    unfold ℰ in *. unfold elem in *. unfold elem2 in *.
+    destruct IH as [k [v' [Heval v'inTMem ]]].
+    prim_unfold_val_type in v'inTMem. destruct v' as [ γ' T' t | γ' T' ]. contradiction.
+    destruct v'inTMem as [X [BotsubX XsubT]].
+    inversion Hty; subst.
+    -- (* t_var *)
+      admit.
+    -- (* t_sub *)
+      admit.
+  - (* stp_selx *)
+    intros. apply subset_refl.
+  - (* stp_all *)
+    intros Γ S1 S2 T1 T2 HS2S1 IHS2S1 HT1T2 IHT1T2 ρ HΓρ γ Hργ v vinAllS1T1.
+    prim_unfold_val_type in vinAllS1T1. destruct v as [γ' T' t | γ' T']; try contradiction.
+    prim_unfold_val_type.
+    unfold ℰ in *. unfold elem in *. unfold elem2 in *.
+    intros vx vxMem.
+    specialize (IHS2S1 _ HΓρ _ Hργ). apply IHS2S1 in vxMem. (* TODO keep generalized version *)
+    apply vinAllS1T1 in vxMem.
+    destruct vxMem as [k [vy [Heval vyinT1]]].
+    exists k. exists vy. split. assumption.
+    assert (vyinT1': val_type (open' γ' T1) Val (val_type S2 Typ ρ :: ρ) vy). {(* TODO need to show contravariance in rho extension of val_type on Typ *)
+             admit.
+    }
+    assert (Hctx : 𝒞𝓉𝓍 (S2 :: Γ) (val_type S2 Typ ρ :: ρ)). {
+      constructor. assumption.
+    }
+    assert (Hg : ℰ𝓃𝓋 (val_type S2 Typ ρ :: ρ) (vx :: γ)). { (* TODO get rid of the γ in fundamental_stp *)
+      admit .
+    }
+    specialize (IHT1T2 _ Hctx _ Hg). red in IHT1T2.
+    unfold open' in *.
+    assert (Hlen : length Γ = length γ'). {
+      admit.
+    }
+    rewrite Hlen in *. apply (IHT1T2 vy) in vyinT1'.
+    assumption.
+  - (* stp_trans *)
+    intros Γ S T U HST IHST HTU IHTU ρ HΓρ γ Hργ v vinS.
+    specialize (IHST _ HΓρ _ Hργ). specialize (IHTU _ HΓρ _ Hργ).
+    eapply subset_trans; eauto. apply subset_refl.
   Admitted.
 
 Theorem fundamental : forall {Γ t T}, has_type Γ t T -> forall{ρ}, 𝒞𝓉𝓍 Γ ρ -> forall{γ}, ℰ𝓃𝓋 ρ γ -> ⟨ γ , t ⟩ ∈ ℰ (val_type T Val ρ).
