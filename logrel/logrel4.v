@@ -301,7 +301,7 @@ Inductive Result : Type :=
 | Error  : Result
 | NoFuel : Result
 .
-
+(* TODO: nice to have: monadic syntax *)
 Fixpoint eval(fuel : nat)(γ : venv)(t : tm){struct fuel}: Result :=
   match fuel with
   | 0   => NoFuel
@@ -789,8 +789,17 @@ Proof.
       exists X. repeat split. unfold elem. apply TsubX. assumption.
       eapply subset_trans. eauto. assumption.
     -- (* t_sub *)
-      (* TODO here we need strong induction on the typing and subtyping assumption of t_sub, need to fix the induction scheme*)
+      assert (IHty :  ⟨ γ , (tvar x) ⟩ ∈ ℰ (val_type T1 Val ρ) ). { (* TODO here we need strong induction on the typing and subtyping assumption of t_sub, need to fix the induction scheme*)
+               admit.
+      }
+      assert (IHsub : (val_type T1 Val ρ) ⊆ (val_type (TMem T TTop) Val ρ)). {
+        admit.
+      }
+      unfold ℰ in *. unfold elem in *. unfold elem2 in *.
+      destruct IHty as [k' [v' [Heval' vinT1]]].
+      prim_unfold_val_type.
       admit.
+
   - (* stp_sel 2*)
     intros Γ x T Hty IH ρ HΓρ γ Hργ v vinxType.
     specialize (IH _ HΓρ _ Hργ).
@@ -800,37 +809,42 @@ Proof.
     destruct v'inTMem as [X [BotsubX XsubT]].
     inversion Hty; subst.
     -- (* t_var *)
-      admit.
+      assert (Hrho : exists ρ', indexr x ρ = Some {| TypF := val_type (TMem TBot T) Typ ρ' ; ValF := val_type (TMem TBot T) Val ρ'    |}). { (* TODO follows from consistent context/environment assumptions *)
+               admit.
+      }
+      destruct Hrho as [ρ' Hrho ].
+      prim_unfold_val_type in vinxType. rewrite Hrho in vinxType. simpl in vinxType.
+      prim_unfold_val_type in vinxType. destruct vinxType as [X' [MemvX' [BotsubX' X'subT ]]].
+      assert (Hext : val_type T Val ρ' ⊆ val_type T Val ρ). { (* TODO need to show that interpretations are stable after extending ρ'*)
+        admit.
+      }
+      apply Hext. apply X'subT. auto.
     -- (* t_sub *)
       admit.
   - (* stp_selx *)
     intros. apply subset_refl.
   - (* stp_all *)
     intros Γ S1 S2 T1 T2 HS2S1 IHS2S1 HT1T2 IHT1T2 ρ HΓρ γ Hργ v vinAllS1T1.
-    prim_unfold_val_type in vinAllS1T1. destruct v as [γ' T' t | γ' T']; try contradiction.
+    prim_unfold_val_type in vinAllS1T1. destruct v as [γ' T' t | γ' T'] eqn:Hv; try contradiction.
     prim_unfold_val_type.
     unfold ℰ in *. unfold elem in *. unfold elem2 in *.
-    intros vx vxMem.
-    specialize (IHS2S1 _ HΓρ _ Hργ). apply IHS2S1 in vxMem. (* TODO keep generalized version *)
+    intros vx vxMem. assert (vxMem' := vxMem).
+    specialize (IHS2S1 _ HΓρ _ Hργ). apply IHS2S1 in vxMem.
     apply vinAllS1T1 in vxMem.
     destruct vxMem as [k [vy [Heval vyinT1]]].
     exists k. exists vy. split. assumption.
-    assert (vyinT1': val_type (open' γ' T1) Val (val_type S2 Typ ρ :: ρ) vy). {(* TODO need to show contravariance in rho extension of val_type on Typ *)
-             admit.
-    }
-    assert (Hctx : 𝒞𝓉𝓍 (S2 :: Γ) (val_type S2 Typ ρ :: ρ)). {
-      constructor. assumption.
-    }
-    assert (Hg : ℰ𝓃𝓋 (val_type S2 Typ ρ :: ρ) (vx :: γ)). { (* TODO get rid of the γ in fundamental_stp *)
-      admit .
-    }
-    specialize (IHT1T2 _ Hctx _ Hg). red in IHT1T2.
-    unfold open' in *.
-    assert (Hlen : length Γ = length γ'). {
+    assert (Hopen1 : (open' Γ T1) = (open' γ' T1)). {
       admit.
     }
-    rewrite Hlen in *. apply (IHT1T2 vy) in vyinT1'.
-    assumption.
+    assert (Hopen2 : (open' Γ T2) = (open' γ' T2)). {
+      admit.
+    }
+    rewrite <- Hopen2. eapply IHT1T2.
+    constructor. assumption.
+    constructor. eassumption. (* TODO this is why it's annoying to carry the Env predicate *)
+    unfold elem. eapply vxMem'.
+    rewrite Hopen1.
+    admit. (* TODO show that replacing ρ a entry with more precise one is allowed   *)
   - (* stp_trans *)
     intros Γ S T U HST IHST HTU IHTU ρ HΓρ γ Hργ v vinS.
     specialize (IHST _ HΓρ _ Hργ). specialize (IHTU _ HΓρ _ Hργ).
