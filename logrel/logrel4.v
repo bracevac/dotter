@@ -491,7 +491,7 @@ Definition val_type_naked (T : ty) : (forall T', R T' T -> lvl -> denv -> Dom) -
 
   | TSel (varF x) => fun _ _ ρ =>
                        match indexr x ρ with
-                       | Some E => ValF E
+                       | Some E => TypF E
                        | None   => DBot
                        end
 
@@ -782,12 +782,11 @@ Proof.
       }
       destruct Hrho as [ρ' Hrho ].
       rewrite Hrho. simpl.
-      prim_unfold_val_type.
-      exists X. repeat split.
-      unfold elem. apply TsubX. assumption.
       assert (Hext : val_type T Val ρ' ⊆ val_type T Val ρ). { (* TODO need to show that interpretations are stable after extending ρ', maybe undo specialization of IH *)
         admit.
       }
+      prim_unfold_val_type.
+      exists X. repeat split. unfold elem. apply TsubX. assumption.
       eapply subset_trans. eauto. assumption.
     -- (* t_sub *)
       (* TODO here we need strong induction on the typing and subtyping assumption of t_sub, need to fix the induction scheme*)
