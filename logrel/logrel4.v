@@ -60,8 +60,53 @@ Fixpoint indexr {X : Type} (n : id) (l : list X) : option X :=
       if (beq_nat n (length l')) then Some a else indexr n l'
   end.
 
-(* Look up a bound variable (deBruijn index) in env *)
-Definition indexl {X : Type} (n : id) (l : list X) : option X := nth_error l n.
+Lemma indexr_length : forall {A B} {xs : list A} {ys : list B}, length xs = length ys -> forall {x}, indexr x xs = None <-> indexr x ys = None.
+Proof.
+  intros A B xs.
+  induction xs; intros; destruct ys; split; simpl in *; intros; eauto; try lia.
+  - inversion H. destruct (PeanoNat.Nat.eqb x (length xs)). discriminate.
+    specialize (IHxs _ H2 x). destruct IHxs. auto.
+  - inversion H. rewrite <- H2 in H0. destruct (PeanoNat.Nat.eqb x (length xs)). discriminate.
+    specialize (IHxs _ H2 x). destruct IHxs. auto.
+Qed.
+
+Lemma indexr_skip : forall {A} {x : A} {xs : list A} {i}, i <> length xs -> indexr i (x :: xs) = indexr i xs.
+Proof.
+  intros.
+  rewrite <- PeanoNat.Nat.eqb_neq in H. auto.
+  simpl. rewrite H. reflexivity.
+Qed.
+
+Lemma indexr_var_some :  forall {A} {xs : list A} {i}, (exists x, indexr i xs = Some x) <-> i < length xs.
+Proof.
+  induction xs; intros; split; intros. inversion H. inversion H0.
+  inversion H. inversion H. simpl in H0. destruct (PeanoNat.Nat.eqb i (length xs)) eqn:Heq.
+  apply beq_nat_true in Heq. rewrite Heq. auto. inversion H.
+  simpl in H. rewrite Heq in H. apply IHxs in H. simpl. lia.
+  simpl. destruct (PeanoNat.Nat.eqb i (length xs)) eqn:Heq.
+  exists a. reflexivity. apply beq_nat_false in Heq. simpl in H.
+  apply IHxs. lia.
+Qed.
+
+(* easier to use for assumptions without existential quantifier *)
+Lemma indexr_var_some' :  forall {A} {xs : list A} {i x}, indexr i xs = Some x -> i < length xs.
+Proof.
+  intros. apply indexr_var_some. exists x. auto.
+Qed.
+
+Lemma indexr_var_none :  forall {A} {xs : list A} {i}, indexr i xs = None <-> i >= length xs.
+Proof.
+  induction xs; intros; split; intros.
+  simpl in *. lia. auto.
+  simpl in H.
+  destruct (PeanoNat.Nat.eqb i (length xs)) eqn:Heq.
+  discriminate. apply IHxs in H. apply beq_nat_false in Heq. simpl. lia.
+  assert (Hleq: i >= length xs). {
+    simpl in H. lia.
+  }
+  apply IHxs in Hleq. rewrite <- Hleq.
+  apply indexr_skip. simpl in H. lia.
+Qed.
 
 Inductive vl : Type :=
 | vabs : list vl -> ty -> tm -> vl
@@ -352,7 +397,7 @@ Notation "{{ ' p | P }}" := (fun v => match v with
 Notation "{{ x | P }}" := (fun x => P)
   (at level 200, x ident).
 
-Definition subset (D1 D2 : Dom) : Prop := forall v, v ∈ D1 -> v ∈ D2.
+Definition subset (D1 D2 : Dom) : Prop := forall v, D1 v -> D2 v.
 Hint Unfold subset : dsub.
 Notation "D1 ⊆ D2" := (subset D1 D2) (at level 75).
 
@@ -490,10 +535,37 @@ Ltac prim_unfold_val_type :=
 Lemma val_type_extend : forall {T 𝓁 ρ E}, val_type T 𝓁 ρ === val_type T 𝓁 (E :: ρ).
 Proof.
   unfold subset.
-  induction T; intros; auto.
+  induction T as [T IHT] using (well_founded_induction wfR).
+  intros. destruct T; auto.
   - (* TAll *)
-    split; intros; destruct v as [ γ T' t | γ T' ]; prim_unfold_val_type in H; prim_unfold_val_type; auto; intros.
+    split; intros; destruct v as [ γ T' t | γ T' ]; prim_unfold_val_type in H; prim_unfold_val_type; auto; intros;
+      unfold elem in *; unfold elem2 in *;
+        eapply (IHT _ RAll1) in H0; apply H in H0; unfold ℰ in *;
+          destruct H0 as [k [vv [Heval HvxinT2]]]; exists k; exists vv; split; try assumption; unfold elem in *;
+            apply (IHT _ RAll2); eapply (IHT _ RAll2) in HvxinT2.
+    apply (IHT _ RAll2). assumption.
+    eapply (IHT _ RAll2). eassumption.
+  -  (* TSel *)
+    split; intros; destruct v. prim_unfold_val_type in H.
+    destruct (indexr i ρ) eqn:Hlookup1; try inversion H.
+    assert (Hleq: i < length ρ). {
+      eapply indexr_var_some'. eauto.
+    }
+    prim_unfold_val_type. apply PeanoNat.Nat.lt_neq in Hleq. rewrite <- PeanoNat.Nat.eqb_neq in Hleq.
+    rewrite Hleq. rewrite Hlookup1. assumption.
+    prim_unfold_val_type in H. auto.
+    admit. (* TODO: have to restrict the T so that it is well-formed under ρ *)
+    prim_unfold_val_type in H. auto.
+  - (* TMem *)
+    split; intros; destruct v as [ γ T' t | γ T' ]; prim_unfold_val_type in H; prim_unfold_val_type; auto; intros;
+      unfold elem in *; unfold elem2 in *; destruct 𝓁; auto; try destruct H as [X [Helem [T1subX XsubT2]]];
+        try destruct H as [X [T1subX XsubT2]]; exists X; repeat split; try assumption;
+          try (apply (subset_trans XsubT2); unfold subset; apply (IHT _ RMem2 Val));
+            eapply subset_trans; try eassumption; unfold subset; apply (IHT _ RMem1 Val).
 Admitted.
+
+Lemma val_type_suffix : forall {T 𝓁 ρ ρ' }, val_type T 𝓁 ρ === val_type T 𝓁 (ρ' ++ ρ).
+Admitted. (* TODO also need closedness assms on T here *)
 
 (* Env relations *)
 Inductive 𝒞𝓉𝓍 : tenv -> denv -> Prop :=
@@ -515,41 +587,25 @@ Inductive ℰ𝓃𝓋 : denv -> venv -> Prop :=
 .
 Hint Constructors ℰ𝓃𝓋 : dsub.
 
+(* TODO: can we put these in record types instead? *)
 Definition 𝒞𝓉𝓍_Inv (x : id) (T : ty) (E : DEntry) : Prop :=
   exists Γ, exists ρ, ValF E = (val_type T Val ρ)
             /\ TypF E = (val_type T Typ ρ)
             /\ 𝒞𝓉𝓍 Γ ρ
             /\ length Γ = length ρ
-            /\ length Γ = x.
+            /\ length Γ = x. (*TODO should also say that the *original* context decomposes into prefix, entry, and suffix *)
 Hint Unfold 𝒞𝓉𝓍_Inv : dsub.
 
 Definition ℰ𝓃𝓋_Inv (x : id) (E : DEntry) (v : vl) : Prop :=
   exists ρ, exists γ, v ∈ ValF E
             /\ ℰ𝓃𝓋 ρ γ
             /\ length ρ = length γ
-            /\ length ρ = x.
+            /\ length ρ = x. (*TODO should also say that the *original* context decomposes into prefix, entry, and suffix *)
 Hint Unfold ℰ𝓃𝓋_Inv : dsub.
 
 Definition lookup_agrees {A B} (xs : list A) (ys : list B) (P : id -> A -> B -> Prop) :=
                   forall {x}, (indexr x xs = None <-> indexr x ys = None)
                               /\ (forall {a}, indexr x xs = Some a -> exists b, indexr x ys = Some b /\ P x a b).
-
-Lemma indexr_length : forall {A B} {xs : list A} {ys : list B}, length xs = length ys -> forall {x}, indexr x xs = None <-> indexr x ys = None.
-Proof.
-  intros A B xs.
-  induction xs; intros; destruct ys; split; simpl in *; intros; eauto; try lia.
-  - inversion H. destruct (PeanoNat.Nat.eqb x (length xs)). discriminate.
-    specialize (IHxs _ H2 x). destruct IHxs. auto.
-  - inversion H. rewrite <- H2 in H0. destruct (PeanoNat.Nat.eqb x (length xs)). discriminate.
-    specialize (IHxs _ H2 x). destruct IHxs. auto.
-Qed.
-
-Lemma indexr_skip : forall {A} {x : A} {xs : list A} {i}, i <> length xs -> indexr i (x :: xs) = indexr i xs.
-Proof.
-  intros.
-  rewrite <- PeanoNat.Nat.eqb_neq in H. auto.
-  simpl. rewrite H. reflexivity.
-Qed.
 
 Lemma 𝒞𝓉𝓍_length : forall {Γ ρ}, 𝒞𝓉𝓍 Γ ρ -> length Γ = length ρ.
 Proof.
@@ -602,8 +658,6 @@ Proof.
     apply Hprefix.
 Qed.
 
-
-
 (* TODO: tactics for dealing with environment lookup_agrees lemmas*)
 
 Lemma fundamental' :  (forall {Γ t T}, has_type Γ t T -> forall{ρ}, 𝒞𝓉𝓍 Γ ρ -> forall{γ}, ℰ𝓃𝓋 ρ γ -> ⟨ γ , t ⟩ ∈ ℰ (val_type T Val ρ))
@@ -619,9 +673,8 @@ Proof.
     apply HργS in HxE. destruct HxE as [v [Hxv Invrx]].
     exists 1. exists v. split. simpl. rewrite Hxv. reflexivity.
     unfold 𝒞𝓉𝓍_Inv in InvGx. destruct InvGx as [Γ0 [ρ0 [HValF HRest]]].
-    rewrite <- HValF.
-
-    admit. (* TODO follows from consistent context/environment assumptions *)
+    (* TODO need show ρ = ρ1 ++ (x :: ρ0) from strengthened lookup_agrees lemma, then apply val_type_suffix *)
+    admit.
   - (* t_typ *)
     intros Γ T Hty ρ HΓρ γ Hργ.
     unfold ℰ. unfold elem. unfold elem2. prim_unfold_val_type.
@@ -638,10 +691,10 @@ Proof.
     prim_unfold_val_type in IH.
     prim_unfold_val_type.
     intros vx vxinT1.
-    assert (HextG : 𝒞𝓉𝓍 (T1 :: Γ) (val_type T1 Typ ρ :: ρ)). { (* TODO follows from consistent context/environment assumptions *)
+    assert (HextG : 𝒞𝓉𝓍 (T1 :: Γ) ((mkD (val_type T1 Val ρ) (val_type T1 Typ ρ)) :: ρ)). { (* TODO follows from consistent context/environment assumptions *)
              admit.
              }
-    assert (Hextg : ℰ𝓃𝓋 (val_type T1 Typ ρ :: ρ) (vx :: γ)). { (* TODO follows from consistent context/environment assumptions *)
+    assert (Hextg : ℰ𝓃𝓋 ((mkD (val_type T1 Val ρ) (val_type T1 Typ ρ)) :: ρ) (vx :: γ)). { (* TODO follows from consistent context/environment assumptions *)
              admit.
     }
     specialize (IH _ HextG _ Hextg).
@@ -724,11 +777,11 @@ Proof.
     inversion Hty; subst.
     -- (* t_var *)
       prim_unfold_val_type.
-      assert (Hrho : exists ρ', indexr x ρ = Some (val_type (TMem T TTop) Typ ρ')). { (* TODO follows from consistent context/environment assumptions *)
+      assert (Hrho : exists ρ', indexr x ρ = Some {| TypF := val_type (TMem T TTop) Typ ρ' ; ValF := val_type (TMem T TTop) Val ρ'    |}). { (* TODO follows from consistent context/environment assumptions *)
                admit.
       }
       destruct Hrho as [ρ' Hrho ].
-      rewrite Hrho.
+      rewrite Hrho. simpl.
       prim_unfold_val_type.
       exists X. repeat split.
       unfold elem. apply TsubX. assumption.
