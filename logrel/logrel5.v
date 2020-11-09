@@ -573,7 +573,7 @@ Inductive 𝒞𝓉𝓍 : tenv -> denv -> Prop :=
     𝒞𝓉𝓍 [] []
 | 𝒞𝓉𝓍_cons : forall {Γ ρ T},
     𝒞𝓉𝓍 Γ ρ ->
-    𝒞𝓉𝓍 (T :: Γ) ({| ValF := (val_type T Val ρ) ; TypF := (val_type T Typ ρ) |} :: ρ) (* TODO demand a subtype of T here? *)
+    𝒞𝓉𝓍 (T :: Γ) ({| ValF := (val_type T Val ρ) ; TypF := (val_type T Typ ρ) |} :: ρ)
 .
 Hint Constructors 𝒞𝓉𝓍 : dsub.
 
@@ -739,14 +739,11 @@ Proof.
     exists (k1 + k2 + k3). exists v3. split.
     destruct k1; destruct k2; destruct k3; try solve [ simpl in *; discriminate].
     admit. (* TODO simple application of eval_monotone and some numbers foo *)
-    unfold open' in *.
-    assert (Hlen : length Γ = length γ'). {
-      admit. (* consequence of context relations in assumptions *)
+    assert (HT2open' : (open' γ' T2) = T2). {
+      admit. (* consequence HT2open *)
     }
-    rewrite Hlen in *. rewrite HT2open in v3inVtyT2.
-    prim_unfold_val_type.
-    prim_unfold_val_type in v3inVtyT2.
-    admit. (* TODO mismatch of ρ in goal and v3inVtyT2, because non-dependent fun. check proofs in ECOOP version*)
+    rewrite HT2open' in *.
+    admit. (* TODO this follows from HT2open and being able to remove the head entry in v3inVtyT (cf. val_type_extend)  *)
     contradiction.
   - (* t_dapp *)
     intros Γ t x T1 T2 Hty1 IHt1 Hty2 IHt2 ρ HΓρ γ Hργ.
@@ -761,12 +758,12 @@ Proof.
     exists (k1 + k2 + k3). exists v3. split.
     destruct k1; destruct k2; destruct k3; try solve [ simpl in *; discriminate].
     admit. (* TODO simple application of eval_monotone and some numbers foo *)
-    unfold open' in *. unfold open in *.
-    assert (Hlen : x = length γ'). {
-      admit. (* consequence of context relations in assumptions *)
-    }
-    rewrite Hlen in *.
-    admit. (* TODO same problem as in t_app case*)
+    (* TODO We can argue that what we add something which is already *)
+    (* in the environment at x, so it does not matter if we open T2 *)
+    (* with x directly or the head of the runtime env γ'. For the same reason, we can
+       justify taking the original ρ. Careful: in general, x does not equal |γ'|,
+       so we cannot show (open' γ' T2) = (open x T2)! *)
+    admit.
     contradiction.
   - (* t_sub *)
     intros Γ t T1 T2 Hty1 IH Hstp IHstp ρ HΓρ γ Hργ.
