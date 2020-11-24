@@ -98,6 +98,9 @@ Proof.
   apply indexr_skip. simpl in H. lia.
 Qed.
 
+(* Look up a bound variable (deBruijn index) in env *)
+Definition indexl {X : Type} (n : id) (l : list X) : option X := nth_error l n.
+
 Inductive vl : Type :=
 | vabs : list vl -> ty -> tm -> vl
 | vty  : list vl -> ty -> vl
@@ -407,7 +410,11 @@ Fixpoint eval(fuel : nat)(γ : venv)(t : tm){struct fuel}: Result :=
       | Some v => Done v
       | None   => Error
       end
-    | tvar (varB x) => Error (* TODO left-lookup in env *)
+    | tvar (varB x) =>
+       match (indexr x γ) with
+       | Some v => Done v
+       | None   => Error
+       end
     | ttyp T    => Done (vty γ T)
     | tabs T t  => Done (vabs γ T t)
     | tapp t1 t2 =>
@@ -434,22 +441,21 @@ Proof.
   - inversion H.
   - destruct n. lia.
     destruct t; try solve [inversion H; eauto]; try lia.
-    inversion H.
-    simpl.
-    remember (eval m γ t2) as t2m.
-    symmetry in Heqt2m.
-    remember (eval m γ t1) as t1m.
-    symmetry in Heqt1m.
-    destruct t2m; destruct t1m; eauto.
-    apply IHm with (n := n) in Heqt2m; try lia.
-    apply IHm with (n := n) in Heqt1m; try lia.
-    rewrite Heqt2m. rewrite Heqt1m.
-    destruct v1; eauto;
-    rewrite H2.
-    apply IHm with (n := n) in H2; try lia.
-    rewrite H2.
-    reflexivity.
-    all:  inversion H2.
+    + inversion H. simpl.
+      remember (eval m γ t2) as t2m. symmetry in Heqt2m.
+      remember (eval m γ t1) as t1m. symmetry in Heqt1m.
+      destruct t2m; destruct t1m; eauto; try inversion H2.
+      apply IHm with (n := n) in Heqt2m; try lia.
+      apply IHm with (n := n) in Heqt1m; try lia.
+      rewrite Heqt2m. rewrite Heqt1m.
+      destruct v1; eauto. rewrite H2.
+      apply IHm with (n := n) in H2; try lia.
+      rewrite H2.
+      reflexivity.
+    + inversion H. simpl. remember (eval m γ t1) as t1m.
+      symmetry in Heqt1m. destruct t1m; eauto; try inversion H2.
+      apply IHm with (n := n) in Heqt1m; try lia.
+      rewrite Heqt1m. rewrite H2. apply IHm; try lia. auto.
 Qed.
 
 Definition evaln γ e v := exists nm, forall n, n > nm -> eval n γ e = Done v.
@@ -463,79 +469,124 @@ Fixpoint tsize_flat(T: ty) :=
     | TAll T1 T2 => S (tsize_flat T1 + tsize_flat T2)
     | TSel _ => 0
     | TMem T1 T2 => S (tsize_flat T1 + tsize_flat T2)
-    (* | TBind T => S (tsize_flat T) *)
-    (* | TAnd T1 T2 => S (tsize_flat T1 + tsize_flat T2) *)
+    | TBind T => S (tsize_flat T)
+    | TAnd T1 T2 => S (tsize_flat T1 + tsize_flat T2)
   end.
 Lemma open_preserves_size: forall T x j,
-  tsize_flat T = tsize_flat (open_rec j (varF x) T).
+    tsize_flat T = tsize_flat (open_rec j (tvar (varF x)) T).
 Proof.
   intros T. induction T; intros; simpl; eauto.
-  destruct v; simpl; destruct (beq_nat j i); eauto.
 Qed.
 
 Declare Scope dsub.
 
-Notation Dom := (vl -> Prop).
 
-Definition elem {A} (v : A) (D : A -> Prop) : Prop := D v.
-Notation "v ∈ D" := (elem v D) (at level 75).
-Hint Unfold elem : dsub.
+Fixpoint vset (n : nat): Type := match n with
+                               | 0 => vl -> Prop
+                               | S n => vset n -> vl -> Prop
+                               end.
+
+Definition vseta := forall n, vset n.
+
+Notation Dom := vseta.
+
+(* vseta membership *)
+Definition vseta_mem (v:vl) (vs1: vseta) (vs2: vseta): Prop :=
+  forall n, vs2 (S n) (vs1 n) v.
+Notation "p ⋵ vs" := (vseta_mem (fst p) (snd p) vs) (at level 79).
+
 Definition elem2 {A B} (γ : A) (v : B) (P : A -> B -> Prop) := P γ v.
 Notation "⟨ H , v ⟩ ∈ D" := (elem2 H v D) (at level 75).
 Hint Unfold elem2 : dsub.
 
-Notation "{{ ' p | P }}" := (fun v => match v with
-                                | p => P
-                                | _ => False
-                                end)
-                           (at level 200, p pattern).
+(* Subset relation for use in comprehensions with explicit index parameter *)
+Definition vset_sub_eq {n:nat}: vset n -> vset n -> Prop :=
+  match n with
+       | 0 => fun vs1 vs2 => forall v, (vs1 v) -> (vs2 v) (* TODO could simplify this to True under assumptions from paper *)
+       | S n => fun vs1 vs2 => forall vs' v, (vs1 vs' v) -> (vs2 vs' v)
+       end.
 
-Notation "{{ x | P }}" := (fun x => P)
-  (at level 200, x ident).
+(* Subset relation closing over all n, for use in the vesta lattice, e.g., monotonicity check*)
+Definition vseta_sub_eq (vs1: vseta) (vs2: vseta) :=
+  forall n, vset_sub_eq (vs1 n) (vs2 n).
 
-Definition subset (D1 D2 : Dom) : Prop := forall v, D1 v -> D2 v.
-Hint Unfold subset : dsub.
-Notation "D1 ⊆ D2" := (subset D1 D2) (at level 75).
+(* \sqsubseteq *)
+Notation "vs1 ⊑# vs2" := (vset_sub_eq vs1 vs2) (at level 75).
+Notation "vs1 ⊑  vs2" := (vseta_sub_eq vs1 vs2) (at level 75).
 
-Notation "D1 === D2" := (D1 ⊆ D2 /\ D2 ⊆ D1) (at level 74).
+(* vseta comprehension exposing the index in the body *)
+Notation "{{ ' p vs n | P }}" := (fun k =>
+                                   match k with
+                                   | 0   => fun _ => True
+                                   | S n => fun (vs : vset n) (v : vl) =>
+                                              match v with
+                                              | p => P
+                                              | _ => False
+                                              end
+                                   end)
+                              (at level 0, p pattern, vs ident, n ident ).
 
-Lemma subset_refl : forall X, X ⊆ X.
+Notation "{{ v vs n | P }}" := (fun k =>
+                                   match k with
+                                   | 0   => fun _ => True
+                                   | S n => fun (vs : vset n) (v : vl) => P
+                                   end)
+                              (at level 0, v ident, vs ident, n ident ).
+
+
+(* The domain vseta is a complete lattice, which we require for least and greatest fixpoints of types. *)
+Definition vseta_top: vseta := {{ v vs n | True }}.
+
+Definition vseta_bot: vseta := {{ v vs n | False }}.
+
+Definition vseta_join (vs1: vseta) (vs2: vseta): vseta := {{ v vs n | (vs1 (S n) vs v) \/ (vs2 (S n) vs v) }}.
+(* \sqcup *)
+Notation "vs1 ⊔ vs2" := (vseta_join vs1 vs2) (at level 70, right associativity).
+
+Definition vseta_meet (vs1: vseta) (vs2: vseta): vseta := {{ v vs n | (vs1 (S n) vs v) /\ (vs2 (S n) vs v) }}.
+(* \sqcap *)
+Notation "vs1 ⊓ vs2" := (vseta_meet vs1 vs2) (at level 65, right associativity).
+
+Definition vseta_big_meet (P: vseta -> Prop): vseta :=
+  fun n =>
+    match n with
+    | 0 =>
+      fun v => True
+    | S n =>
+      fun vsn v =>
+        (forall vssn, (P vssn) -> (vssn (S n) vsn v))
+    end.
+
+(* \bigsqcap *)
+Notation "⨅{{ vs | P }}" := (vseta_big_meet (fun vs => P)) (vs at level 99).
+
+Definition vseta_big_join (P: vseta -> Prop): vseta :=
+  fun n =>
+    match n with
+    | 0 =>
+      fun v => True
+    | S n =>
+      fun vsn v =>
+        (exists vssn, (P vssn) /\ (vssn (S n) vsn v))
+    end.
+
+(* \bigsqcup *)
+Notation "⨆{{ vs | P }}" := (vseta_big_join (fun vs => P)) (vs at level 99).
+
+Lemma subset_refl : forall X, X ⊑ X.
 Proof.
-  intros. unfold subset. auto.
+  intros. unfold vseta_sub_eq. unfold vset_sub_eq. intros.
+  induction n; eauto.
 Qed.
 Hint Resolve subset_refl : dsub.
 
-Lemma subset_trans : forall {X Y Z}, X ⊆ Y -> Y ⊆ Z -> X ⊆ Z.
+Lemma subset_trans : forall {X Y Z}, X ⊑ Y -> Y ⊑ Z -> X ⊑ Z.
 Proof.
-  intros. unfold subset. auto.
+  intros. unfold vseta_sub_eq in *. induction n.
+  - specialize (H 0). specialize (H0 0). simpl. eauto.
+  - simpl. intros. specialize (H (S n)). specialize (H0 (S n)).
+    eauto.
 Qed.
-
-Lemma seteq_refl : forall X, X === X.
-Proof.
-  split. apply subset_refl. apply subset_refl.
-Qed.
-
-Lemma seteq_sym : forall X Y, X === Y -> Y === X.
-Proof.
-  intros. destruct H. split; auto.
-Qed.
-
-Lemma seteq_trans : forall X Y Z, X === Y -> Y === Z -> X === Z.
-Proof.
-  intros. destruct H. destruct H0.
-  eauto using subset_trans.
-Qed.
-
-(* For each term variable, we store its value set interp in ValF and its indirect value set in TypF. *)
-Record DEntry := mkD { ValF : Dom; TypF : Dom; }.
-Definition denv := list DEntry.
-
-Notation DTop  := (fun _ => True).
-Notation DBot  := (fun _ => False).
-
-Definition ℰ (D : Dom) (γ : venv) (t : tm) : Prop :=
-  exists k, exists v, eval k γ t = Done v /\ v ∈ D.
-Hint Unfold ℰ : dsub.
 
 (* Well-founded recursion.
 
@@ -551,6 +602,9 @@ Inductive R : ty -> ty -> Prop :=
 | RAll2  : forall {T1 T2 A} {γ : list A}, R (open' γ T2) (TAll T1 T2)
 | RMem1  : forall {T1 T2}, R T1 (TMem T1 T2)
 | RMem2  : forall {T1 T2}, R T2 (TMem T1 T2)
+| RAnd1  : forall {T1 T2}, R T1 (TAnd T1 T2)
+| RAnd2  : forall {T1 T2}, R T2 (TAnd T1 T2)
+| RBind  : forall {T A} {γ : list A}, R (open' γ T) (TBind T)
 .
 
 Hint Constructors Acc : dsub.
@@ -561,7 +615,8 @@ Proof.
   induction n.
   - destruct T; intros; constructor; intros; simpl in *; inversion H0; try lia.
   - intros. destruct T; constructor; intros; simpl in *; inversion H0; subst; apply IHn; try lia.
-    unfold open'. rewrite <- open_preserves_size. lia.
+    unfold open'. rewrite <- open_preserves_size. lia. unfold open'. rewrite <- open_preserves_size.
+    lia.
 Defined.
 
 Theorem wfR : well_founded R.
@@ -569,40 +624,40 @@ Proof.
   red. intros T. eapply wfR'. auto.
 Defined.
 
-(* This disentangles two concerns in the logical relation *)
-Inductive lvl :=
-| Typ : lvl (* treat identifiers as type variable, e.g., for (vty gamma T), compute the denotation [[ T ]] *)
-| Val : lvl (* treat identifier as term variables, e.g., for (vty gamma T), include it as it is. *).
+Definition denv := list Dom.
 
-Definition val_type_naked (T : ty) : (forall T', R T' T -> lvl -> denv -> Dom) -> lvl -> denv -> Dom :=
+Definition ℰ (D : Dom) (γ : venv) (t : tm) : Prop :=
+  exists k v, eval k γ t = Done v /\ exists vs, (v, vs) ⋵ D.
+Hint Unfold ℰ : dsub.
+
+Definition val_type_naked (T : ty) : (forall T', R T' T -> denv -> Dom) -> denv -> Dom :=
   match T with
-  | TTop          => fun _ _ _ => DTop
+  | TTop          => fun _ _ => vseta_top
 
 
-  | TAll T1 T2    => fun val_type _ ρ =>
-                       {{ '(vabs γ _ t) | let D1 := (val_type T1 RAll1 Val ρ) in
-                                         let D2 := (val_type T1 RAll1 Typ ρ) in
-                                         let ρ' := (mkD D1 D2) :: ρ in
-                                         forall vx, vx ∈ D1 -> ⟨ (vx :: γ) , t  ⟩ ∈ ℰ (val_type (open' γ T2) RAll2 Val ρ')  }}
+  | TAll T1 T2    => fun val_type ρ =>
+                      {{ '(vabs γ _ t) D n | forall vx Dx, (vx, Dx) ⋵ (val_type T1 RAll1 ρ) ->
+                                                      ⟨ (vx :: γ) , t  ⟩ ∈ ℰ (val_type (open' γ T2) RAll2 (Dx :: ρ))  }}
 
-  | TSel (varF x) => fun _ _ ρ =>
+  | TSel (tvar (varF x)) => fun _ ρ => (* todo general expression evaluation *)
                        match indexr x ρ with
-                       | Some E => TypF E
-                       | None   => DBot
+                       | Some D => D
+                       | None   => vseta_bot
                        end
 
-  | TMem T1 T2    => fun val_type lvl ρ =>
-                       match lvl with
-                       | Val => {{ '(vty gamma T) | exists X, (val_type T1 RMem1 Val ρ) ⊆ X /\ X ⊆ (val_type T2 RMem2 Val ρ) }} (* the side condition is not strictly necessary, but makes sense in the proof *)
-                       (* this is the largest set between the Val interp of the bounds: ⋃ { X | [[T1]] ⊆ X ⊆ [[T2]] } *)
-                       | Typ => {{ v | exists X, v ∈ X /\ (val_type T1 RMem1 Val ρ) ⊆ X /\ X ⊆ (val_type T2 RMem2 Val ρ) }}
-                       end
+  | TMem T1 T2    => fun val_type ρ =>
+                      {{ '(vty γ T) D n | (val_type T1 RMem1 ρ n) ⊑# D /\ D ⊑# (val_type T2 RMem2 ρ n) }}
 
-  | _             => fun _ _ _  => DBot
+  | TBind T       => fun val_type ρ =>
+                      {{ v D n | exists X, X n = D /\ (val_type (open' ρ T) RBind (X :: ρ) (S n) D v) }}
+
+  | TAnd T1 T2    => fun val_type ρ =>
+                      (val_type T1 RAnd1 ρ) ⊓ (val_type T2 RAnd2 ρ)
+  | _             => fun _ _  => vseta_bot
   end.
 
-Definition val_type : ty -> lvl -> denv -> Dom :=
-  Fix wfR (fun _ => lvl -> denv -> Dom) val_type_naked.
+Definition val_type : ty -> denv -> Dom :=
+  Fix wfR (fun _ => denv -> Dom) val_type_naked.
 
 (* Providing an unfolding requires extensionality. *)
 Axiom extensionality : forall (A : Type) (B : A -> Type)
@@ -610,7 +665,7 @@ Axiom extensionality : forall (A : Type) (B : A -> Type)
      (forall a : A, f a = g a) -> f = g.
 
 Theorem val_type_extensional :
-  forall (T1 : ty) (f g : forall T2 : ty, R T2 T1 -> lvl -> denv -> Dom),
+  forall (T1 : ty) (f g : forall T2 : ty, R T2 T1 -> denv -> Dom),
         (forall (T2 : ty) (r : R T2 T1), f T2 r = g T2 r)
      -> val_type_naked T1 f = val_type_naked T1 g.
 Proof.
