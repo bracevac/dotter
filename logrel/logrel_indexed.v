@@ -100,9 +100,6 @@ Proof.
   apply indexr_skip. simpl in H. lia.
 Qed.
 
-(* Look up a bound variable (deBruijn index) in env *)
-Definition indexl {X : Type} (n : id) (l : list X) : option X := nth_error l n.
-
 Inductive vl : Type :=
 | vabs : list vl -> ty -> tm -> vl
 | vty  : list vl -> ty -> vl
@@ -113,14 +110,14 @@ Definition venv := list vl. (* H environment: run-time *)
 
 Fixpoint open_rec (k: nat) (u: var) (T: ty) { struct T }: ty :=
   match T with
-    | TTop        => TTop
-    | TBot        => TBot
-    | TAll T1 T2  => TAll (open_rec k u T1) (open_rec (S k) u T2)
-    | TSel (varF x) => TSel (varF x)
-    | TSel (varB i) => if beq_nat k i then TSel u else TSel (varB i)
-    | TMem T1 T2  => TMem (open_rec k u T1) (open_rec k u T2)
-    | TBind T => TBind (open_rec (S k) u T)
-    | TAnd T1 T2 => TAnd (open_rec k u T1) (open_rec k u T2)
+  | TTop           => TTop
+  | TBot           => TBot
+  | TAll  T1 T2    => TAll (open_rec k u T1) (open_rec (S k) u T2)
+  | TSel  (varF x) => TSel (varF x)
+  | TSel  (varB i) => if beq_nat k i then TSel u else TSel (varB i)
+  | TMem  T1 T2    => TMem  (open_rec k u T1)    (open_rec k u T2)
+  | TBind T        => TBind (open_rec (S k) u T)
+  | TAnd  T1 T2    => TAnd  (open_rec k u T1)    (open_rec k u T2)
   end.
 
 Fixpoint open_rec_tm (k : nat) (u : var) (t : tm) {struct t} : tm :=
@@ -246,12 +243,14 @@ with
       stp Γ T1 T2 ->
       stp Γ (TMem S1 T1) (TMem S2 T2)
 
-  | stp_sel1 : forall Γ x T,
-      has_type Γ (tvar (varF x)) (TMem T TTop) ->
+  | stp_sel1 : forall Γ x T1 T,
+      indexr x Γ = Some T1 ->
+      stp Γ T1 (TMem T TTop) ->
       stp Γ T (TSel (varF x))
 
-  | stp_sel2 : forall Γ x T,
-      has_type Γ (tvar (varF x)) (TMem TBot T) ->
+  | stp_sel2 : forall Γ x T1 T,
+      indexr x Γ = Some T1 ->
+      stp Γ T1 (TMem TBot T) ->
       stp Γ (TSel (varF x)) T
 
   | stp_selx : forall Γ x T1 T2,
@@ -297,17 +296,6 @@ Hint Constructors ty_wf : dsub.
 Hint Constructors has_type : dsub.
 Hint Constructors stp : dsub.
 
-Scheme
-  ctx_wf_mut := Induction for ctx_wf Sort Prop
-  with
-    ty_wf_mut := Induction for ty_wf Sort Prop
-  with
-    has_type_stp_mut := Induction for has_type Sort Prop
-  with
-    stp_has_type_mut := Induction for stp Sort Prop.
-
-Combined Scheme ind_derivations from ctx_wf_mut, ty_wf_mut, has_type_stp_mut, stp_has_type_mut.
-
 Fixpoint weaken_ctx  {Γ}     (cwf : ctx_wf Γ)       : forall {T'}, ty_wf Γ T' -> ctx_wf   (T' :: Γ)
 with weaken_ty       {Γ T}   (twf : ty_wf Γ T)      : forall {T'}, ty_wf Γ T' -> ty_wf    (T' :: Γ) T
 with weaken_has_type {Γ t T} (ht  : has_type Γ t T) : forall {T'}, ty_wf Γ T' -> has_type (T' :: Γ) t T
@@ -330,6 +318,10 @@ with weaken_stp      {Γ S T} (st  : stp Γ S T)      : forall {T'}, ty_wf Γ T'
     + eapply t_unpack. eauto. auto. auto. admit. (* TODO: moar permutation shenanigans *)
     + eapply t_sub. eauto. auto.
   - clear weaken_stp. induction st; intros; intuition.
+    + eapply stp_sel1. rewrite indexr_skip. eauto. apply indexr_var_some' in H. lia.
+      eauto.
+    + eapply stp_sel2. rewrite indexr_skip. eauto. apply indexr_var_some' in H. lia.
+      eauto.
     + eapply stp_selx. eauto.
     + constructor. auto. admit. (* TODO: moar permutation shenanigans *)
       intuition.
@@ -358,9 +350,11 @@ with stp_ty_wf      {Γ S T} (st  : stp Γ S T)      : ctx_wf Γ * ty_wf Γ S * 
     + apply stp_ty_wf in H. intuition.
   - clear stp_ty_wf. induction st; split; eauto; intuition; eauto;
                        try solve [constructor; eauto];
+                       try solve [inversion b; auto];
                        try solve [eapply wf_sel; eauto];
                        try solve [apply has_type_ty_wf in H; intuition].
-    all: apply has_type_ty_wf in H; destruct H as [wfΓ wfMem]; inversion wfMem; auto.
+    eapply wf_sel. eapply t_sub. apply t_var. auto. eauto. eauto.
+    eapply wf_sel. eapply t_sub. apply t_var. auto. eauto. eauto.
 Admitted.
 
 (* ### Evaluation (Big-Step Semantics) ### *)
@@ -485,6 +479,9 @@ Definition vset_sub_eq {n:nat}: vset n -> vset n -> Prop :=
 Definition vseta_sub_eq (vs1: vseta) (vs2: vseta) :=
   forall n, vset_sub_eq (vs1 n) (vs2 n).
 
+Hint Unfold vset_sub_eq : dsub.
+Hint Unfold vseta_sub_eq : dsub.
+
 (* \sqsubseteq *)
 Notation "vs1 ⊑# vs2" := (vset_sub_eq vs1 vs2) (at level 75).
 Notation "vs1 ⊑  vs2" := (vseta_sub_eq vs1 vs2) (at level 75).
@@ -606,13 +603,7 @@ Lemma seteq'_trans : forall {n} {X Y Z : vset n}, X ==# Y -> Y ==# Z -> X ==# Z.
   intuition; eapply subset'_trans; eauto.
 Qed.
 
-(* Well-founded recursion.
-
-   This solves the problem of Program Fixpoint unfoldings being
-   incomprehensible and a proof of a manual unfolding theorem being
-   unbearably slow. Kudos to Chris Casinghino, whose Coq artifact
-   for the Zombie language inspired this approach.
-*)
+(* Logical Relation *)
 
 (* well-founded relation which captures the recursive calls in the interpretation val_type. *)
 Inductive R : ty -> ty -> Prop :=
@@ -695,11 +686,11 @@ Qed.
 Hint Resolve val_type_extensional : dsub.
 
 (* unfolding tactics for hypotheses and goal *)
-Tactic Notation "prim_unfold_val_type" "in" hyp(H) :=
+Tactic Notation "unfold_val_type" "in" hyp(H) :=
   unfold val_type in H; rewrite Fix_eq in H;
   [ simpl in H; repeat fold val_type in H | apply val_type_extensional ].
 
-Ltac prim_unfold_val_type :=
+Ltac unfold_val_type :=
   unfold val_type; rewrite Fix_eq;
   [ simpl; repeat fold val_type | apply val_type_extensional ].
 
@@ -710,7 +701,7 @@ Ltac prim_unfold_val_type :=
 (*   induction T as [T IHT] using (well_founded_induction wfR). *)
 (*   intros. destruct T; auto. *)
 (*   - (* TAll *) *)
-(*     split; intros; destruct v as [ γ T' t | γ T' ]; prim_unfold_val_type in H; prim_unfold_val_type; auto; intros; *)
+(*     split; intros; destruct v as [ γ T' t | γ T' ]; unfold_val_type in H; unfold_val_type; auto; intros; *)
 (*       unfold elem in *; unfold elem2 in *; *)
 (*         eapply (IHT _ RAll1) in H0; apply H in H0; unfold ℰ in *; *)
 (*           destruct H0 as [k [vv [Heval HvxinT2]]]; exists k; exists vv; split; try assumption; unfold elem in *; *)
@@ -718,18 +709,18 @@ Ltac prim_unfold_val_type :=
 (*     apply (IHT _ RAll2). assumption. *)
 (*     eapply (IHT _ RAll2). eassumption. *)
 (*   -  (* TSel *) *)
-(*     split; intros; destruct v. prim_unfold_val_type in H. *)
+(*     split; intros; destruct v. unfold_val_type in H. *)
 (*     destruct (indexr i ρ) eqn:Hlookup1; try inversion H. *)
 (*     assert (Hleq: i < length ρ). { *)
 (*       eapply indexr_var_some'. eauto. *)
 (*     } *)
-(*     prim_unfold_val_type. apply PeanoNat.Nat.lt_neq in Hleq. rewrite <- PeanoNat.Nat.eqb_neq in Hleq. *)
+(*     unfold_val_type. apply PeanoNat.Nat.lt_neq in Hleq. rewrite <- PeanoNat.Nat.eqb_neq in Hleq. *)
 (*     rewrite Hleq. rewrite Hlookup1. assumption. *)
-(*     prim_unfold_val_type in H. auto. *)
+(*     unfold_val_type in H. auto. *)
 (*     admit. (* TODO: have to restrict the T so that it is well-formed under ρ *) *)
-(*     prim_unfold_val_type in H. auto. *)
+(*     unfold_val_type in H. auto. *)
 (*   - (* TMem *) *)
-(*     split; intros; destruct v as [ γ T' t | γ T' ]; prim_unfold_val_type in H; prim_unfold_val_type; auto; intros; *)
+(*     split; intros; destruct v as [ γ T' t | γ T' ]; unfold_val_type in H; unfold_val_type; auto; intros; *)
 (*       unfold elem in *; unfold elem2 in *; destruct 𝓁; auto; try destruct H as [X [Helem [T1subX XsubT2]]]; *)
 (*         try destruct H as [X [T1subX XsubT2]]; exists X; repeat split; try assumption; *)
 (*           try (apply (subset_trans XsubT2); unfold subset; apply (IHT _ RMem2 Val)); *)
@@ -750,97 +741,78 @@ Inductive 𝒞𝓉𝓍 : tenv -> denv -> venv -> Prop :=
 .
 Hint Constructors 𝒞𝓉𝓍 : dsub.
 
-(* TODO: can we put these in record types instead? *)
-(* Definition 𝒞𝓉𝓍_Inv (x : id) (T : ty) (E : DEntry) : Prop := *)
-(*   exists Γ, exists ρ, ValF E = (val_type T Val ρ) *)
-(*             /\ TypF E = (val_type T Typ ρ) *)
-(*             /\ 𝒞𝓉𝓍 Γ ρ *)
-(*             /\ length Γ = length ρ *)
-(*             /\ length Γ = x. (*TODO should also say that the *original* context decomposes into prefix, entry, and suffix *) *)
-(* Hint Unfold 𝒞𝓉𝓍_Inv : dsub. *)
+Lemma 𝒞𝓉𝓍_length : forall {Γ ρ γ}, 𝒞𝓉𝓍 Γ ρ γ -> length Γ = length γ /\ length γ = length ρ.
+  intros Γ ρ γ C. induction C; simpl; intuition.
+Qed.
 
-(* Definition ℰ𝓃𝓋_Inv (x : id) (E : DEntry) (v : vl) : Prop := *)
-(*   exists ρ, exists γ, v ∈ ValF E *)
-(*             /\ ℰ𝓃𝓋 ρ γ *)
-(*             /\ length ρ = length γ *)
-(*             /\ length ρ = x. (*TODO should also say that the *original* context decomposes into prefix, entry, and suffix *) *)
-(* Hint Unfold ℰ𝓃𝓋_Inv : dsub. *)
+Lemma 𝒞𝓉𝓍_lengthρ : forall {Γ ρ γ}, 𝒞𝓉𝓍 Γ ρ γ -> length Γ = length ρ.
+  intros Γ ρ γ C. apply 𝒞𝓉𝓍_length in C. intuition.
+Qed.
 
-(* Definition lookup_agrees {A B} (xs : list A) (ys : list B) (P : id -> A -> B -> Prop) := *)
-(*                   forall {x}, (indexr x xs = None <-> indexr x ys = None) *)
-(*                               /\ (forall {a}, indexr x xs = Some a -> exists b, indexr x ys = Some b /\ P x a b). *)
+Lemma 𝒞𝓉𝓍_lengthγ : forall {Γ ρ γ}, 𝒞𝓉𝓍 Γ ρ γ -> length Γ = length γ.
+  intros Γ ρ γ C. apply 𝒞𝓉𝓍_length in C. intuition.
+Qed.
 
-(* Lemma 𝒞𝓉𝓍_length : forall {Γ ρ}, 𝒞𝓉𝓍 Γ ρ -> length Γ = length ρ. *)
-(* Proof. *)
-(*   intros Γ ρ HΓρ. induction HΓρ; simpl; auto. *)
-(* Qed. *)
 
-(* Lemma ℰ𝓃𝓋_length : forall {ρ γ}, ℰ𝓃𝓋 ρ γ -> length ρ = length γ. *)
-(* Proof. *)
-(*   intros ρ γ Hργ. induction Hργ; simpl; auto. *)
-(* Qed. *)
+(* Bundles facts about lookups in related envs *)
+Record LookupT (x : id) {Γ ρ γ} (C : 𝒞𝓉𝓍 Γ ρ γ) : Type :=
+  mkLookupT
+    {
+      l_T  : ty;   l_D  : Dom;  l_v  : vl;
+      (* l_Γ1 : tenv; l_Γ2 : tenv; l_ρ1 : denv; *)
+      (* l_ρ2 : denv; l_γ1 : venv; l_γ2 : venv; *)
+      l_x_in_Dom : x < length Γ;
+      l_x_Γ_T    : indexr x Γ = Some l_T;
+      l_x_ρ_D    : indexr x ρ = Some l_D;
+      l_x_γ_v    : indexr x γ = Some l_v;
+      (* l_𝒞𝓉𝓍      : 𝒞𝓉𝓍 (l_T :: l_Γ2) (l_D :: l_ρ2) (l_v :: l_γ2); *)
+      l_vD_in_Tρ : (l_v, l_D) ⋵ (val_type l_T ρ);
+      (* l_Γ_split  : Γ = l_Γ1 ++ (l_T :: l_Γ2); *)
+      (* l_ρ_split  : ρ = l_ρ1 ++ (l_D :: l_ρ2); *)
+      (* l_γ_split  : γ = l_γ1 ++ (l_v :: l_γ2); *)
+    }.
+Arguments l_T        {x Γ ρ γ C}.
+Arguments l_D        {x Γ ρ γ C}.
+Arguments l_v        {x Γ ρ γ C}.
+Arguments l_v        {x Γ ρ γ C}.
+Arguments l_x_Γ_T    {x Γ ρ γ C}.
+Arguments l_x_ρ_D    {x Γ ρ γ C}.
+Arguments l_x_γ_v    {x Γ ρ γ C}.
+Arguments l_vD_in_Tρ {x Γ ρ γ C}.
+Arguments l_x_in_Dom {x Γ ρ γ C}.
 
-(* Lemma lookup_𝒞𝓉𝓍 : forall {Γ ρ}, 𝒞𝓉𝓍 Γ ρ -> lookup_agrees Γ ρ 𝒞𝓉𝓍_Inv. *)
-(* Proof. *)
-(*   unfold lookup_agrees. unfold 𝒞𝓉𝓍_Inv. *)
-(*   intros Γ ρ HΓρ x. split. apply indexr_length. apply 𝒞𝓉𝓍_length. assumption. *)
-(*   induction HΓρ; intros. simpl in *. discriminate. *)
-(*   assert (Hlen : length Γ = length ρ). { *)
-(*     apply 𝒞𝓉𝓍_length. auto. *)
-(*   } *)
-(*   destruct (Nat.eqb x (length ρ)) eqn:Heqtest. *)
-(*   - symmetry in Heqtest. simpl in H. *)
-(*     exists {| ValF := val_type T Val ρ; TypF := val_type T Typ ρ |}. *)
-(*     split. simpl. rewrite <- Heqtest. reflexivity. *)
-(*     rewrite <- Hlen in Heqtest. rewrite <- Heqtest in H. inversion H. subst. *)
-(*     exists Γ. exists ρ. repeat split; simpl. assumption. assumption. rewrite <- PeanoNat.Nat.eqb_eq. *)
-(*     rewrite PeanoNat.Nat.eqb_sym. symmetry. assumption. *)
-(*   - rewrite <- Hlen in Heqtest. simpl in H. rewrite Heqtest in H. *)
-(*     specialize (IHHΓρ _ H). destruct IHHΓρ as [E [HxE Hprefix]]. *)
-(*     exists E. split. simpl. rewrite Hlen in Heqtest. rewrite Heqtest. assumption. *)
-(*     apply Hprefix. *)
-(* Qed. *)
+Inductive Lookup (x : id) {Γ ρ γ} (C : 𝒞𝓉𝓍 Γ ρ γ) : Prop :=
+  | lkT : LookupT x C -> Lookup x C.
 
-(* Lemma lookup_ℰ𝓃𝓋 : forall {ρ γ}, ℰ𝓃𝓋 ρ γ -> lookup_agrees ρ γ ℰ𝓃𝓋_Inv. *)
-(* Proof. *)
-(*   unfold lookup_agrees. unfold ℰ𝓃𝓋_Inv. *)
-(*   intros ρ γ Hργ x. split. apply indexr_length. apply ℰ𝓃𝓋_length. assumption. *)
-(*   induction Hργ; intros. simpl in *. discriminate. *)
-(*   assert (Hlen : length ρ = length γ). { *)
-(*     apply ℰ𝓃𝓋_length. auto. *)
-(*   } *)
-(*   destruct (Nat.eqb x (length γ)) eqn:Heqtest. *)
-(*   - symmetry in Heqtest. simpl in H0. *)
-(*     exists v. split. simpl. rewrite <- Heqtest. reflexivity. *)
-(*     rewrite <- Hlen in Heqtest. rewrite <- Heqtest in H0. inversion H0. subst. *)
-(*     exists ρ. exists γ. repeat split; simpl. assumption. assumption. assumption. *)
-(*     rewrite <- PeanoNat.Nat.eqb_eq. rewrite PeanoNat.Nat.eqb_sym. symmetry. assumption. *)
-(*   - rewrite <- Hlen in Heqtest. simpl in H0. rewrite Heqtest in H0. *)
-(*     specialize (IHHργ _ H0). destruct IHHργ as [v' [Hxv Hprefix]]. *)
-(*     exists v'. split. simpl. rewrite Hlen in Heqtest. rewrite Heqtest. assumption. *)
-(*     apply Hprefix. *)
-(* Qed. *)
-
-(* TODO: tactics for dealing with environment lookup_agrees lemmas*)
+Fixpoint lookup {Γ ρ γ} (C : 𝒞𝓉𝓍 Γ ρ γ) : forall {x}, x < length Γ -> Lookup x C.
+  inversion C; subst; simpl.
+  - lia.
+  - intros. dependent destruction H1.
+    apply lookup. simpl. lia.
+    apply (lookup _ _ _ H) in H1.
+    destruct H1. constructor.
+    refine (mkLookupT x (T :: Γ0) (D :: ρ0) (v :: γ0) C (l_T X) (l_D X) (l_v X) _ _ _ _ _).
+    destruct X. simpl. lia.
+    rewrite indexr_skip. apply (l_x_Γ_T X).  destruct X. lia.
+    rewrite indexr_skip. apply (l_x_ρ_D).    destruct X. rewrite <- (𝒞𝓉𝓍_lengthρ H). lia.
+    rewrite indexr_skip. apply (l_x_γ_v).    destruct X. rewrite <- (𝒞𝓉𝓍_lengthγ H). lia.
+    admit. (* TODO need extension lemma for val_type *)
+Admitted.
 
 Lemma fundamental     : (forall {Γ t T}, has_type Γ t T -> forall{ρ γ}, 𝒞𝓉𝓍 Γ ρ γ -> ⟨ γ , t ⟩ ∈ ℰ (val_type T ρ))
 with  fundamental_stp : (forall {Γ S T}, stp Γ S T      -> forall{ρ γ}, 𝒞𝓉𝓍 Γ ρ γ -> (val_type S ρ) ⊑ (val_type T ρ)).
 Proof.
   - clear fundamental. intros Γ t T Hty. induction Hty; intros ρ γ HΓργ; unfold ℰ in *; unfold elem2 in *.
     + (* t_var *)
-      admit.
-      (* apply lookup_𝒞𝓉𝓍 in HΓρ. unfold lookup_agrees in *. specialize (HΓρ x). destruct HΓρ as [HΓρN HΓρS]. *)
-      (* apply lookup_ℰ𝓃𝓋 in Hργ. unfold lookup_agrees in *. specialize (Hργ x). destruct Hργ as [HργN HργS]. *)
-      (* apply HΓρS in Hlookup. destruct Hlookup as [E [HxE InvGx]]. *)
-      (* apply HργS in HxE. destruct HxE as [v [Hxv Invrx]]. *)
-      (* exists 1. exists v. split. simpl. rewrite Hxv. reflexivity. *)
-      (* unfold 𝒞𝓉𝓍_Inv in InvGx. destruct InvGx as [Γ0 [ρ0 [HValF HRest]]]. *)
+      pose (HL := H0). apply indexr_var_some' in HL. apply (lookup HΓργ) in HL. inversion HL as [L].
+      exists 1. exists (l_v L). split. simpl. rewrite (l_x_γ_v L). auto.
+      exists (l_D L). rewrite (l_x_Γ_T L) in H0. inversion H0. subst. apply (l_vD_in_Tρ L).
     + (* t_typ *)
       exists 1. exists (vty γ T). split. simpl. auto. exists (val_type T ρ). unfold vseta_mem.
-      intros. simpl. prim_unfold_val_type. apply seteq'_refl.
+      intros. simpl. unfold_val_type. apply seteq'_refl.
     + (* t_abs *)
       exists 1. exists (vabs γ T1 t). split. simpl. reflexivity.
-      exists vseta_top. unfold vseta_mem. prim_unfold_val_type. unfold vseta_mem. intros n vx Dx vxDxinT1.
+      exists vseta_top. unfold vseta_mem. unfold_val_type. unfold vseta_mem. intros n vx Dx vxDxinT1.
       unfold ℰ in *; unfold elem2 in *.
       assert (HOt : (open_tm' γ t) = (open_tm' Γ t)). {
         admit. (* TODO: consequence of env assms *)
@@ -855,7 +827,7 @@ Proof.
       specialize (IHHty1 _ _ HΓργ). specialize (IHHty2 _ _ HΓργ).
       destruct IHHty1 as [k1 [v1 [evalv1 [vs1 v1vs1inVtyT1T2 ]]]].
       destruct IHHty2 as [k2 [v2 [evalv2 [vs2 v2vs2inVtyT1]]]].
-      prim_unfold_val_type in v1vs1inVtyT1T2. destruct v1 as [ γ' T' t' | γ' T' ].
+      unfold_val_type in v1vs1inVtyT1T2. destruct v1 as [ γ' T' t' | γ' T' ].
       specialize (v1vs1inVtyT1T2 0 v2 vs2 v2vs2inVtyT1).
       unfold ℰ in *. unfold elem2 in *.
       destruct v1vs1inVtyT1T2 as [k3 [v3 [evalapp [vs3 v3vs3inVtyT2] ]]].
@@ -875,7 +847,7 @@ Proof.
       specialize (IHHty1 _ _ HΓργ). specialize (IHHty2 _ _ HΓργ).
       destruct IHHty1 as [k1 [v1 [evalv1 [vs1 v1vs1inVtyT1T2 ]]]].
       destruct IHHty2 as [k2 [v2 [evalv2 [vs2 v2vs2inVtyT1]]]].
-      prim_unfold_val_type in v1vs1inVtyT1T2. destruct v1 as [ γ' T' t' | γ' T' ].
+      unfold_val_type in v1vs1inVtyT1T2. destruct v1 as [ γ' T' t' | γ' T' ].
       specialize (v1vs1inVtyT1T2 0 v2 vs2 v2vs2inVtyT1).
       unfold ℰ in *. unfold elem2 in *.
       destruct v1vs1inVtyT1T2 as [k3 [v3 [evalapp [vs3 v3vs3inVtyT2] ]]].
@@ -896,7 +868,7 @@ Proof.
     + (* t_var_pack *)
       specialize (IHHty _ _ HΓργ).  destruct IHHty as [k [v [evalv [vs vvsinVtyTx ]]]].
       exists k. exists v. split. auto. exists vs.
-      prim_unfold_val_type. unfold vseta_mem. intros. unfold vseta_big_join.
+      unfold_val_type. unfold vseta_mem. intros. unfold vseta_big_join.
       exists (val_type (open (varF x) T) ρ). split.
       admit. (* TODO *)
       eauto.
@@ -904,7 +876,7 @@ Proof.
       simpl in IHHty1. simpl in IHHty2.
       specialize (IHHty1 _ _ HΓργ). destruct IHHty1 as [k1 [v1 [evalv1 [vs1 v1vs1inVtyT1T2 ]]]].
       remember (val_type (TBind T1) ρ) as F.
-      prim_unfold_val_type in HeqF.
+      unfold_val_type in HeqF.
       admit. (* TODO *)
     + (* t_sub *)
       specialize (IHHty _ _ HΓργ).
@@ -915,73 +887,41 @@ Proof.
       unfold vseta_sub_eq in fundamental_stp. specialize (fundamental_stp (S n)).
       eauto.
   (* Subtyping *)
-  - intros Γ S T Hst.
+  - clear fundamental_stp. intros Γ S T Hst.
     induction Hst; intros ρ γ HΓργ; unfold vseta_sub_eq; intros; unfold vset_sub_eq; destruct n; intros; trivial.
     + (* stp_top *)
-      prim_unfold_val_type. trivial.
+      unfold_val_type. trivial.
     + (* stp_bot *)
       destruct H0.
     + (* stp_mem *)
-      prim_unfold_val_type in H. destruct v as [ γ' T t | γ' T ]. contradiction.
+      unfold_val_type in H. destruct v as [ γ' T t | γ' T ]. contradiction.
       specialize (IHHst1 _ _ HΓργ n). specialize (IHHst2 _ _ HΓργ n).
-      destruct H as [ S1subX XsubT1 ]. prim_unfold_val_type. split.
+      destruct H as [ S1subX XsubT1 ]. unfold_val_type. split.
       eapply subset'_trans. eauto. assumption.
       eapply subset'_trans. eauto. assumption.
     + (* stp_sel1 *)
-      specialize (fundamental Γ (tvar (varF x)) (TMem T TTop) H _ _ HΓργ).
-      unfold elem2 in fundamental. unfold ℰ in fundamental.
-      destruct fundamental as [k [vt [ evalv [ X vtXinTTop ]]]].
-      unfold vseta_mem in vtXinTTop. prim_unfold_val_type in vtXinTTop.
-      destruct vt as [ γ' T' t | γ' T' ]. contradiction.
-      inversion H; subst.
-      -- (* t_var *)
-        assert (Hrho : exists D, indexr x ρ = Some D /\ ((vty γ' T'), D) ⋵ (val_type (TMem T TTop) ρ)). {
-          admit.
-        }
-        destruct Hrho as [D [rhoD vtDinTTop]]. unfold vseta_mem in vtDinTTop. simpl in vtDinTTop.
-        prim_unfold_val_type. rewrite rhoD. specialize (vtDinTTop (S n)).
-        prim_unfold_val_type in vtDinTTop. intuition.
-      -- (* t_sub *)
-        eapply fundamental_stp in H2; eauto.
-        assert (Hrho : exists D, indexr x ρ = Some D /\ ((vty γ' T'), D) ⋵ (val_type T1 ρ)). {
-          admit.
-        }
-        destruct Hrho as [D [rhoD vtDinT1]]. unfold vseta_mem in vtDinT1. simpl in vtDinT1.
-        prim_unfold_val_type. rewrite rhoD.
-        unfold vseta_sub_eq in H2. specialize (H2 (S (S n))). specialize (vtDinT1 (S n)).
-        unfold vset_sub_eq in H2. apply H2 in vtDinT1. prim_unfold_val_type in vtDinT1.
-        intuition.
+      specialize (IHHst _ _ HΓργ). pose (HL := H). apply indexr_var_some' in HL.
+      apply (lookup HΓργ) in HL. inversion HL as [L]. destruct L.
+      rewrite l_x_Γ_T0 in H. inversion H. subst.
+      unfold vseta_mem in *. simpl in *. unfold vseta_sub_eq in IHHst.
+      specialize (IHHst (S (S n))). unfold vset_sub_eq in IHHst.
+      specialize (l_vD_in_Tρ0 (S n)). apply IHHst in l_vD_in_Tρ0.
+      unfold_val_type in l_vD_in_Tρ0. destruct l_v0 as [ γ' T' t | γ' T' ]. contradiction.
+      unfold_val_type. rewrite l_x_ρ_D0. intuition.
     + (* stp_sel2 *)
-      specialize (fundamental Γ (tvar (varF x)) (TMem TBot T) H _ _ HΓργ).
-      unfold elem2 in fundamental. unfold ℰ in fundamental.
-      destruct fundamental as [k [vt [ evalv [ X vtXinBotT ]]]].
-      unfold vseta_mem in vtXinBotT. prim_unfold_val_type in vtXinBotT.
-      destruct vt as [ γ' T' t | γ' T' ]. contradiction.
-      inversion H; subst.
-      -- (* t_var *)
-        assert (Hrho : exists D, indexr x ρ = Some D /\ ((vty γ' T'), D) ⋵ (val_type (TMem TBot T) ρ)). {
-          admit.
-        }
-        destruct Hrho as [D [rhoD vtDinBotT]].
-        prim_unfold_val_type in H0. rewrite rhoD in H0.
-        unfold vseta_mem in vtDinBotT. simpl in vtDinBotT. specialize (vtDinBotT (S n)).
-        prim_unfold_val_type in vtDinBotT. intuition.
-      -- (* t_sub *)
-        eapply fundamental_stp in H2; eauto.
-        assert (Hrho : exists D, indexr x ρ = Some D /\ ((vty γ' T'), D) ⋵ (val_type T1 ρ)). {
-          admit.
-        }
-        destruct Hrho as [D [rhoD vtDinT1]]. unfold vseta_mem in vtDinT1. simpl in vtDinT1.
-        prim_unfold_val_type in H0. rewrite rhoD in H0.
-        unfold vseta_sub_eq in H2. specialize (H2 (S (S n))). specialize (vtDinT1 (S n)).
-        unfold vset_sub_eq in H2. apply H2 in vtDinT1. prim_unfold_val_type in vtDinT1.
-        intuition.
+      specialize (IHHst _ _ HΓργ). pose (HL := H). apply indexr_var_some' in HL.
+      apply (lookup HΓργ) in HL. inversion HL as [L]. destruct L.
+      rewrite l_x_Γ_T0 in H. inversion H. subst.
+      unfold vseta_mem in *. simpl in *. unfold vseta_sub_eq in IHHst.
+      specialize (IHHst (S (S n))). unfold vset_sub_eq in IHHst.
+      specialize (l_vD_in_Tρ0 (S n)). apply IHHst in l_vD_in_Tρ0.
+      unfold_val_type in l_vD_in_Tρ0. destruct l_v0 as [ γ' T' t | γ' T' ]. contradiction.
+      unfold_val_type in H0. rewrite l_x_ρ_D0 in H0. intuition.
     + (* stp_all *)
-      prim_unfold_val_type in H0. destruct v as [γ' T' t | γ' T'] eqn:Hv; try contradiction.
-      prim_unfold_val_type.
+      unfold_val_type in H0. destruct v as [γ' T' t | γ' T'] eqn:Hv; try contradiction.
+      unfold_val_type.
       unfold ℰ in *. unfold elem2 in *.
-      intros vx Dx vxMem. assert (vxMem' := vxMem).
-      specialize (IHHst1 _ _ HΓργ).
+      intros vx Dx vxMem. specialize (IHHst1 _ _ HΓργ).
       assert (HvsDxS1 : vseta_mem vx Dx (val_type S1 ρ)). {
         (* TODO: it might be better to formulate  ⊑ in terms of vseta_mem, might save a few annoying manual steps *)
         unfold vseta_mem in *.
@@ -999,37 +939,34 @@ Proof.
       rewrite <- Hopen2. exists Dy.
       unfold vseta_mem. intros m. simpl.
       unfold vseta_sub_eq in IHHst2.
-      assert (HC: 𝒞𝓉𝓍 (S2 :: Γ) (Dx :: ρ) (vx :: γ)). {
-        admit.
-      }
+      assert (HC: 𝒞𝓉𝓍 (S2 :: Γ) (Dx :: ρ) (vx :: γ)) by intuition.
       specialize (IHHst2 _ _ HC (S m)).
       apply IHHst2. rewrite Hopen1. intuition.
     + (* stp_bindx *)
-      subst.
-      prim_unfold_val_type in H3.
-      prim_unfold_val_type.
-      destruct H3 as [F [Fsub FMem]].
-      exists F.
+      subst. unfold_val_type in H3. unfold_val_type.
+      destruct H3 as [F [Fsub FMem]]. exists F.
       assert (HOT1 : (open' ρ T1) = (open' Γ T1)). {
-        admit. (* TODO: consequence of env assms *)
+        unfold open'. rewrite (𝒞𝓉𝓍_lengthρ HΓργ). auto.
       }
       assert (HOT2 : (open' ρ T2) = (open' Γ T2)). {
-        admit. (* TODO: consequence of env assms *)
+        unfold open'. rewrite (𝒞𝓉𝓍_lengthρ HΓργ). auto.
       }
       rewrite HOT1 in *. rewrite HOT2 in *.
       split. eapply subset_trans. eapply Fsub.
-      eapply IHHst.
+      eapply IHHst. constructor. eauto. unfold vseta_mem.
+      intros. simpl. unfold vseta_sub_eq in Fsub. specialize (Fsub (S n0)).
+      unfold vset_sub_eq in Fsub.
       admit.
       assumption.
     + (* stp_and11 *)
       specialize (IHHst _ _ HΓργ (S n)).
-      prim_unfold_val_type in H0. intuition.
+      unfold_val_type in H0. intuition.
     + (* stp_and12 *)
       specialize (IHHst _ _ HΓργ (S n)).
-      prim_unfold_val_type in H0. intuition.
+      unfold_val_type in H0. intuition.
     + (* stp_and2 *)
       specialize (IHHst1 _ _ HΓργ (S n)). specialize (IHHst2 _ _ HΓργ (S n)).
-      prim_unfold_val_type. intuition.
+      unfold_val_type. intuition.
     + (* stp_trans *)
       unfold vseta_sub_eq in *.
       specialize (IHHst1 _ _ HΓργ (Datatypes.S n)). specialize (IHHst2 _ _ HΓργ (Datatypes.S n)).
