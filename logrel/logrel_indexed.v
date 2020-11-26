@@ -6,7 +6,17 @@ Require Import Psatz. (* mainly for lia *)
 Import ListNotations.
 
 (*
-  Extends the SN proof by Wang and Rompf to richer path expressions.
+  Recreation of Wang and Rompf's SN proof.
+
+  Differences:
+
+  - Locally nameless for terms also, to prepare for extending the path syntax.
+  - Overall more high level with definitions that are easier relatable
+    to pen and paper formulation.
+  - Standard formulation of fundamental lemma for typing and subtyping.
+  - Makes clear that self-recursive types have greatest fixpoint semantics.
+  - Logical relation definition (val_type) with better performance, using Coq's
+    well-founded recursion library.
 
   Compatible with Coq 8.12.1.
 *)
@@ -781,6 +791,7 @@ Arguments l_x_γ_v    {x Γ ρ γ C}.
 Arguments l_vD_in_Tρ {x Γ ρ γ C}.
 Arguments l_x_in_Dom {x Γ ρ γ C}.
 
+(* Enables doing induction on C in the lookup lemma *)
 Inductive Lookup (x : id) {Γ ρ γ} (C : 𝒞𝓉𝓍 Γ ρ γ) : Prop :=
   | lkT : LookupT x C -> Lookup x C.
 
@@ -815,10 +826,12 @@ Proof.
       exists vseta_top. unfold vseta_mem. unfold_val_type. unfold vseta_mem. intros n vx Dx vxDxinT1.
       unfold ℰ in *; unfold elem2 in *.
       assert (HOt : (open_tm' γ t) = (open_tm' Γ t)). {
-        admit. (* TODO: consequence of env assms *)
+        apply 𝒞𝓉𝓍_lengthγ in HΓργ. unfold open_tm'.
+        rewrite HΓργ. auto.
       }
       assert (HOT2 : (open' γ T2) = (open' Γ T2)). {
-        admit. (* TODO: consequence of env assms *)
+        apply 𝒞𝓉𝓍_length in HΓργ. unfold open'. destruct HΓργ.
+        rewrite H0. auto.
       }
       rewrite HOt. rewrite HOT2. apply IHHty.
       constructor; intuition.
