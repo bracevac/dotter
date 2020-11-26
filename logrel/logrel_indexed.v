@@ -981,31 +981,55 @@ Proof.
       prim_unfold_val_type.
       unfold ℰ in *. unfold elem2 in *.
       intros vx Dx vxMem. assert (vxMem' := vxMem).
-      specialize (IHHst1 _ _ HΓργ). admit.
-      (* apply IH in vxMem. *)
-      (* apply vinAllS1T1 in vxMem. *)
-      (* destruct vxMem as [k [vy [Heval vyinT1]]]. *)
-      (* exists k. exists vy. split. assumption. *)
-      (* assert (Hopen1 : (open' Γ T1) = (open' γ' T1)). { *)
-      (*   admit. *)
-      (* } *)
-      (* assert (Hopen2 : (open' Γ T2) = (open' γ' T2)). { *)
-      (*   admit. *)
-      (* } *)
-      (* rewrite <- Hopen2. eapply IHT1T2. *)
-      (* constructor. assumption. *)
-      (* constructor. eassumption. (* TODO this is why it's annoying to carry the Env predicate *) *)
-      (* unfold elem. eapply vxMem'. *)
-      (* rewrite Hopen1. *)
-      (* admit. (* TODO show that replacing ρ a entry with more precise one is allowed   *) *)
+      specialize (IHHst1 _ _ HΓργ).
+      assert (HvsDxS1 : vseta_mem vx Dx (val_type S1 ρ)). {
+        (* TODO: it might be better to formulate  ⊑ in terms of vseta_mem, might save a few annoying manual steps *)
+        unfold vseta_mem in *.
+        intros m. specialize (IHHst1 (S m)).
+        intuition.
+      }
+      eapply H0 in HvsDxS1. destruct HvsDxS1 as [k [vy [Heval [Dy vyinT1]]]].
+      exists k. exists vy. split. assumption.
+      assert (Hopen1 : (open' Γ T1) = (open' γ' T1)). {
+        admit.
+      }
+      assert (Hopen2 : (open' Γ T2) = (open' γ' T2)). {
+        admit.
+      }
+      rewrite <- Hopen2. exists Dy.
+      unfold vseta_mem. intros m. simpl.
+      unfold vseta_sub_eq in IHHst2.
+      assert (HC: 𝒞𝓉𝓍 (S2 :: Γ) (Dx :: ρ) (vx :: γ)). {
+        admit.
+      }
+      specialize (IHHst2 _ _ HC (S m)).
+      apply IHHst2. rewrite Hopen1. intuition.
     + (* stp_bindx *)
+      subst.
+      prim_unfold_val_type in H3.
+      prim_unfold_val_type.
+      destruct H3 as [F [Fsub FMem]].
+      exists F.
+      assert (HOT1 : (open' ρ T1) = (open' Γ T1)). {
+        admit. (* TODO: consequence of env assms *)
+      }
+      assert (HOT2 : (open' ρ T2) = (open' Γ T2)). {
+        admit. (* TODO: consequence of env assms *)
+      }
+      rewrite HOT1 in *. rewrite HOT2 in *.
+      split. eapply subset_trans. eapply Fsub.
+      eapply IHHst.
       admit.
+      assumption.
     + (* stp_and11 *)
-      admit.
+      specialize (IHHst _ _ HΓργ (S n)).
+      prim_unfold_val_type in H0. intuition.
     + (* stp_and12 *)
-      admit.
+      specialize (IHHst _ _ HΓργ (S n)).
+      prim_unfold_val_type in H0. intuition.
     + (* stp_and2 *)
-      admit.
+      specialize (IHHst1 _ _ HΓργ (S n)). specialize (IHHst2 _ _ HΓργ (S n)).
+      prim_unfold_val_type. intuition.
     + (* stp_trans *)
       unfold vseta_sub_eq in *.
       specialize (IHHst1 _ _ HΓργ (Datatypes.S n)). specialize (IHHst2 _ _ HΓργ (Datatypes.S n)).
