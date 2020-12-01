@@ -306,6 +306,59 @@ Hint Constructors ty_wf : dsub.
 Hint Constructors has_type : dsub.
 Hint Constructors stp : dsub.
 
+Inductive closed_ty: nat(*B*) -> nat(*F*) -> ty -> Prop :=
+| cl_top: forall b f,
+    closed_ty b f TTop
+| cl_bot: forall b f,
+    closed_ty b f TBot
+| cl_all: forall b f T1 T2,
+    closed_ty b f T1 ->
+    closed_ty (S b) f T2 ->
+    closed_ty b f (TAll T1 T2)
+| cl_sel_f: forall b f x,
+    x < f ->
+    closed_ty b f (TSel (varF x))
+| cl_sel_b: forall b f x,
+    x < b ->
+    closed_ty b f (TSel (varB x))
+| cl_mem: forall b f T1 T2,
+    closed_ty b f T1 ->
+    closed_ty b f T2 ->
+    closed_ty b f (TMem T1 T2)
+| cl_bind: forall b f T,
+    closed_ty (S b) f T ->
+    closed_ty b f (TBind T)
+| cl_and: forall b f T1 T2,
+    closed_ty b f T1 ->
+    closed_ty b f T2 ->
+    closed_ty b f (TAnd T1 T2)
+.
+
+Inductive closed_tm: nat(*B*) -> nat(*F*) -> tm -> Prop :=
+| cl_tvarb: forall b f x,
+    x < b ->
+    closed_tm b f (tvar (varB x))
+| cl_tvarf: forall b f x,
+    x < f ->
+    closed_tm b f (tvar (varF x))
+| cl_ttyp:  forall b f T,
+    closed_ty b f T ->
+    closed_tm b f (ttyp T)
+| cl_tabs:  forall b f T tm,
+    closed_ty b f T ->
+    closed_tm (S b) f tm ->
+    closed_tm b f (tabs T tm)
+| cl_tapp:  forall b f tm1 tm2,
+    closed_tm b f tm1 ->
+    closed_tm b f tm2 ->
+    closed_tm b f (tapp tm1 tm2)
+| cl_tunpack: forall b f tm1 tm2,
+    closed_tm b f tm1 ->
+    closed_tm (S b) f tm2 ->
+    closed_tm b f (tunpack tm1 tm2)
+.
+
+
 Fixpoint weaken_ctx  {Γ}     (cwf : ctx_wf Γ)       : forall {T'}, ty_wf Γ T' -> ctx_wf   (T' :: Γ)
 with weaken_ty       {Γ T}   (twf : ty_wf Γ T)      : forall {T'}, ty_wf Γ T' -> ty_wf    (T' :: Γ) T
 with weaken_has_type {Γ t T} (ht  : has_type Γ t T) : forall {T'}, ty_wf Γ T' -> has_type (T' :: Γ) t T
@@ -656,7 +709,7 @@ Definition val_type_naked (T : ty) : (forall T', R T' T -> denv -> Dom) -> denv 
 
   | TAll T1 T2    => fun val_type ρ =>
                       {{ '(vabs γ _ t) D n | forall vx Dx, (vx, Dx) ⋵ (val_type T1 RAll1 ρ) ->
-                                                     ⟨ (vx :: γ) , (open_tm' γ t)  ⟩ ∈ ℰ (val_type (open' γ T2) RAll2 (Dx :: ρ))  }}
+                                                     ⟨ (vx :: γ) , (open_tm' γ t)  ⟩ ∈ ℰ (val_type (open' ρ T2) RAll2 (Dx :: ρ))  }}
 
   | TSel (varF x) => fun _ ρ =>
                        match indexr x ρ with
@@ -763,8 +816,8 @@ Lemma 𝒞𝓉𝓍_lengthγ : forall {Γ ρ γ}, 𝒞𝓉𝓍 Γ ρ γ -> length
   intros Γ ρ γ C. apply 𝒞𝓉𝓍_length in C. intuition.
 Qed.
 
-Lemma val_type_extend  : forall {Γ ρ γ T D}, 𝒞𝓉𝓍 Γ ρ γ -> ty_wf Γ T -> val_type T ρ        ⊑ val_type T (D :: ρ)
-with  val_type_shrink  : forall {Γ ρ γ T D}, 𝒞𝓉𝓍 Γ ρ γ -> ty_wf Γ T -> val_type T (D :: ρ) ⊑ val_type T ρ.
+Lemma val_type_extend  : forall {T Γ ρ γ D}, 𝒞𝓉𝓍 Γ ρ γ -> ty_wf Γ T -> val_type T ρ        ⊑ val_type T (D :: ρ)
+with  val_type_shrink  : forall {T Γ ρ γ D}, 𝒞𝓉𝓍 Γ ρ γ -> ty_wf Γ T -> val_type T (D :: ρ) ⊑ val_type T ρ.
   - clear val_type_extend.
     induction T as [T IHT] using (well_founded_induction wfR).
     intros. unfold vseta_sub_eq.
@@ -772,16 +825,18 @@ with  val_type_shrink  : forall {Γ ρ γ T D}, 𝒞𝓉𝓍 Γ ρ γ -> ty_wf �
     + (* TAll *)
       unfold_val_type. intros. destruct v as [ γ' T' t | γ' T' ]; eauto.
       intros. inversion H0. subst. unfold elem2 in *. unfold ℰ in *. specialize (H1 vx Dx).
-      specialize (val_type_shrink _ _ _ _ D H H6).
       assert (HT1 : vseta_mem vx Dx (val_type T1 ρ)).  {
         unfold vseta_sub_eq in *. unfold vseta_mem in *.
         unfold vset_sub_eq in *.  intros m.
+        specialize (val_type_shrink _ _ _ _ D H H6).
         specialize (val_type_shrink (S m)). simpl in val_type_shrink.
         apply val_type_shrink. eauto.
       }
       apply H1 in HT1. destruct HT1 as [k [vy [Heval [vsy HvyinT2]]]].
-      exists k. exists vy. intuition. exists vsy. (* TODO this looks like trouble *)
-      admit. (* better to reformulate vseteq_subeq in terms of vseta_mem *)
+      exists k. exists vy. intuition. exists vsy.
+      specialize (IHT _ (@RAll2 _ _ _ ρ) (T1 :: Γ) (Dx :: ρ) (vx :: γ) D).
+      (* TODO better to reformulate vseteq_subeq in terms of vseta_mem *)
+      admit.
     + (* TSel *)
       unfold vseta_sub_eq in *. unfold vset_sub_eq. intros.
       unfold_val_type in H1. inversion H0. subst. unfold_val_type. destruct (indexr x ρ) eqn:Hlookup1.
