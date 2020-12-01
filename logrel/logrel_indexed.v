@@ -763,6 +763,54 @@ Lemma 𝒞𝓉𝓍_lengthγ : forall {Γ ρ γ}, 𝒞𝓉𝓍 Γ ρ γ -> length
   intros Γ ρ γ C. apply 𝒞𝓉𝓍_length in C. intuition.
 Qed.
 
+Lemma val_type_extend  : forall {Γ ρ γ T D}, 𝒞𝓉𝓍 Γ ρ γ -> ty_wf Γ T -> val_type T ρ        ⊑ val_type T (D :: ρ)
+with  val_type_shrink  : forall {Γ ρ γ T D}, 𝒞𝓉𝓍 Γ ρ γ -> ty_wf Γ T -> val_type T (D :: ρ) ⊑ val_type T ρ.
+  - clear val_type_extend.
+    induction T as [T IHT] using (well_founded_induction wfR).
+    intros. unfold vseta_sub_eq.
+    intros. destruct T; destruct n; intuition.
+    + (* TAll *)
+      unfold_val_type. intros. destruct v as [ γ' T' t | γ' T' ]; eauto.
+      intros. inversion H0. subst. unfold elem2 in *. unfold ℰ in *. specialize (H1 vx Dx).
+      specialize (val_type_shrink _ _ _ _ D H H6).
+      assert (HT1 : vseta_mem vx Dx (val_type T1 ρ)).  {
+        unfold vseta_sub_eq in *. unfold vseta_mem in *.
+        unfold vset_sub_eq in *.  intros m.
+        specialize (val_type_shrink (S m)). simpl in val_type_shrink.
+        apply val_type_shrink. eauto.
+      }
+      apply H1 in HT1. destruct HT1 as [k [vy [Heval [vsy HvyinT2]]]].
+      exists k. exists vy. intuition. exists vsy. (* TODO this looks like trouble *)
+      admit. (* better to reformulate vseteq_subeq in terms of vseta_mem *)
+    + (* TSel *)
+      unfold vseta_sub_eq in *. unfold vset_sub_eq. intros.
+      unfold_val_type in H1. inversion H0. subst. unfold_val_type. destruct (indexr x ρ) eqn:Hlookup1.
+      assert (Hleq: x < length ρ) by (eapply indexr_var_some'; eauto).
+      apply PeanoNat.Nat.lt_neq in Hleq. rewrite <- PeanoNat.Nat.eqb_neq in Hleq. rewrite Hleq.
+      assumption. simpl in H1. contradiction.
+    + (* TMem *)
+      inversion H0. subst. unfold vseta_sub_eq in *. unfold vset_sub_eq in *. intros. unfold_val_type in H1.
+      destruct v as [ γ' T' t | γ' T' ]; eauto. unfold_val_type. destruct n; intuition.
+      -- specialize (IHT _ RMem1 D H H4 (S n)). simpl in IHT.
+         specialize (val_type_shrink _ _ _ T1 D H H4 (S n)). simpl in val_type_shrink.
+         intuition.
+      -- specialize (IHT _ RMem2 D H H5 (S n)). simpl in IHT. intuition.
+    + (* TBind *)
+      unfold_val_type. intros.
+      admit.
+    + (* TAnd *)
+      admit.
+  - clear val_type_shrink.
+    induction T as [T IHT] using (well_founded_induction wfR).
+    intros. unfold vseta_sub_eq. destruct T; destruct n; intuition.
+    + (* TAll *)
+      admit.
+    + (* TSel *)
+      admit.
+    + (* TBind *)
+      admit.
+    + (* TAnd *)
+Admitted.
 
 (* Bundles facts about lookups in related envs *)
 Record LookupT (x : id) {Γ ρ γ} (C : 𝒞𝓉𝓍 Γ ρ γ) : Type :=
