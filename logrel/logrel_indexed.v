@@ -62,6 +62,11 @@ Fixpoint indexr {X : Type} (n : id) (l : list X) : option X :=
       if (beq_nat n (length l')) then Some a else indexr n l'
   end.
 
+Lemma indexr_head : forall {A} {x : A} {xs}, indexr (length xs) (x :: xs) = Some x.
+  intros. simpl. destruct (Nat.eqb (length xs) (length xs)) eqn:Heq. auto.
+  apply beq_nat_false in Heq. contradiction.
+Qed.
+
 Lemma indexr_length : forall {A B} {xs : list A} {ys : list B}, length xs = length ys -> forall {x}, indexr x xs = None <-> indexr x ys = None.
 Proof.
   intros A B xs.
@@ -360,6 +365,11 @@ Inductive closed_tm: nat(*B*) -> nat(*F*) -> tm -> Prop :=
 .
 Hint Constructors closed_ty : dsub.
 Hint Constructors closed_tm : dsub.
+
+Lemma has_type_var_length : forall {Γ x T}, has_type Γ (tvar (varF x)) T -> x < length Γ.
+  intros. dependent induction H; eauto.
+  apply indexr_var_some' in H0. auto.
+Qed.
 
 Fixpoint weaken_ctx  {Γ}     (cwf : ctx_wf Γ)       : forall {T'}, ty_wf Γ T' -> ctx_wf   (T' :: Γ)
 with weaken_ty       {Γ T}   (twf : ty_wf Γ T)      : forall {T'}, ty_wf Γ T' -> ty_wf    (T' :: Γ) T
@@ -866,6 +876,21 @@ with  val_type_shrink'  : forall {T ρ D}, closed_ty 0 (length ρ) T -> val_type
       admit.
 Admitted.
 
+Lemma val_type_closed : forall {T ρ v D}, (v, D) ⋵ (val_type T ρ) -> closed_ty 0 (length ρ) T.
+  unfold vseta_mem. simpl.
+  induction T as [T IHT] using (well_founded_induction wfR).
+  intros. destruct T; intuition.
+  Admitted.
+
+(* TOOD this wouldn't be necessary if ⊑ was formulated in terms of ⋵ *)
+Lemma val_type_extend_mem  : forall {T ρ v D D'}, (v, D) ⋵ (val_type T ρ) -> (v, D) ⋵ (val_type T (D' :: ρ)).
+  intros. assert (Hc : closed_ty 0 (length ρ) T) by (apply (val_type_closed H)).
+  apply (@val_type_extend' _ _ D') in Hc.
+  unfold vseta_mem in *. unfold vseta_sub_eq in *. intros.
+  specialize (Hc (S n)). unfold vset_sub_eq in *. simpl in *.
+  eauto.
+Qed.
+
 Lemma val_type_extend  : forall {T Γ ρ γ D}, 𝒞𝓉𝓍 Γ ρ γ -> ty_wf Γ T -> val_type T ρ       ⊑ val_type T (D :: ρ)
 with  val_type_shrink  : forall {T Γ ρ γ D}, 𝒞𝓉𝓍 Γ ρ γ -> ty_wf Γ T -> val_type T (D :: ρ) ⊑ val_type T ρ.
   - clear val_type_extend.
@@ -918,7 +943,7 @@ with  val_type_shrink  : forall {T Γ ρ γ D}, 𝒞𝓉𝓍 Γ ρ γ -> ty_wf �
 Admitted.
 
 (* Bundles facts about lookups in related envs *)
-Record LookupT (x : id) {Γ ρ γ} (C : 𝒞𝓉𝓍 Γ ρ γ) : Type :=
+Record LookupT (x : id) (Γ : tenv) (ρ : denv) (γ : venv) : Type :=
   mkLookupT
     {
       l_T  : ty;   l_D  : Dom;  l_v  : vl;
@@ -934,35 +959,38 @@ Record LookupT (x : id) {Γ ρ γ} (C : 𝒞𝓉𝓍 Γ ρ γ) : Type :=
       (* l_ρ_split  : ρ = l_ρ1 ++ (l_D :: l_ρ2); *)
       (* l_γ_split  : γ = l_γ1 ++ (l_v :: l_γ2); *)
     }.
-Arguments l_T        {x Γ ρ γ C}.
-Arguments l_D        {x Γ ρ γ C}.
-Arguments l_v        {x Γ ρ γ C}.
-Arguments l_v        {x Γ ρ γ C}.
-Arguments l_x_Γ_T    {x Γ ρ γ C}.
-Arguments l_x_ρ_D    {x Γ ρ γ C}.
-Arguments l_x_γ_v    {x Γ ρ γ C}.
-Arguments l_vD_in_Tρ {x Γ ρ γ C}.
-Arguments l_x_in_Dom {x Γ ρ γ C}.
+Arguments l_T        {x Γ ρ γ}.
+Arguments l_D        {x Γ ρ γ}.
+Arguments l_v        {x Γ ρ γ}.
+Arguments l_v        {x Γ ρ γ}.
+Arguments l_x_Γ_T    {x Γ ρ γ}.
+Arguments l_x_ρ_D    {x Γ ρ γ}.
+Arguments l_x_γ_v    {x Γ ρ γ}.
+Arguments l_vD_in_Tρ {x Γ ρ γ}.
+Arguments l_x_in_Dom {x Γ ρ γ}.
 
 (* Enables doing induction on C in the lookup lemma *)
-Inductive Lookup (x : id) {Γ ρ γ} (C : 𝒞𝓉𝓍 Γ ρ γ) : Prop :=
-  | lkT : LookupT x C -> Lookup x C.
+Inductive Lookup (x : id) Γ ρ γ : Prop :=
+  | lkT : LookupT x Γ ρ γ -> Lookup x Γ ρ γ.
 
-Fixpoint lookup {Γ ρ γ} (C : 𝒞𝓉𝓍 Γ ρ γ) : forall {x}, x < length Γ -> Lookup x C.
-  inversion C; subst; simpl.
+Lemma lookup {Γ ρ γ} (C : 𝒞𝓉𝓍 Γ ρ γ) : forall {x}, x < length Γ -> Lookup x Γ ρ γ.
+  induction C; simpl; intros.
   - lia.
-  - intros. dependent destruction H1.
-    apply lookup. simpl. lia.
-    apply (lookup _ _ _ H) in H1.
-    destruct H1. constructor.
-    refine (mkLookupT x (T :: Γ0) (D :: ρ0) (v :: γ0) C (l_T X) (l_D X) (l_v X) _ _ _ _ _).
-    destruct X. simpl. lia.
-    rewrite indexr_skip. apply (l_x_Γ_T X).  destruct X. lia.
-    rewrite indexr_skip. apply (l_x_ρ_D).    destruct X. rewrite <- (𝒞𝓉𝓍_lengthρ H). lia.
-    rewrite indexr_skip. apply (l_x_γ_v).    destruct X. rewrite <- (𝒞𝓉𝓍_lengthγ H). lia.
-    destruct X. simpl.
-    admit. (* TODO need extension lemma for val_type *)
-Admitted.
+  - inversion H0.
+    + constructor. econstructor.
+      simpl. lia.
+      apply indexr_head.
+      rewrite (𝒞𝓉𝓍_lengthρ C). apply indexr_head.
+      rewrite (𝒞𝓉𝓍_lengthγ C). apply indexr_head.
+      apply val_type_extend_mem. assumption.
+    + apply IHC in H2. inversion H2. destruct X.
+      constructor. econstructor.
+      simpl. lia.
+      rewrite indexr_skip. eauto. lia.
+      rewrite indexr_skip. eauto. rewrite <- (𝒞𝓉𝓍_lengthρ C). lia.
+      rewrite indexr_skip. eauto. rewrite <- (𝒞𝓉𝓍_lengthγ C). lia.
+      apply val_type_extend_mem. assumption.
+Qed.
 
 Lemma fundamental     : (forall {Γ t T}, has_type Γ t T -> forall{ρ γ}, 𝒞𝓉𝓍 Γ ρ γ -> ⟨ γ , t ⟩ ∈ ℰ (val_type T ρ))
 with  fundamental_stp : (forall {Γ S T}, stp Γ S T      -> forall{ρ γ}, 𝒞𝓉𝓍 Γ ρ γ -> (val_type S ρ) ⊑ (val_type T ρ)).
