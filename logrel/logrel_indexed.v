@@ -832,6 +832,32 @@ Lemma 𝒞𝓉𝓍_lengthγ : forall {Γ ρ γ}, 𝒞𝓉𝓍 Γ ρ γ -> length
   intros Γ ρ γ C. apply 𝒞𝓉𝓍_length in C. intuition.
 Qed.
 
+Lemma val_type_open : forall {n T ρ},
+    tsize_flat T < n ->
+    closed_ty 1 (length ρ) T ->
+    forall {ρ' v vs Dx}, ⦑ v, vs ⦒ ⋵ val_type (open' ρ T) (Dx :: ρ) <-> ⦑ v, vs ⦒ ⋵ val_type (open' (ρ' ++ ρ) T) (Dx :: (ρ' ++ ρ)).
+  induction n; intros; destruct T; intuition.
+  - inversion H0. subst. simpl in H.
+    unfold vseta_mem in *. intros. unfold_val_type.
+    destruct v as [ γ' T' t | γ' T' ]. specialize (H1 n).
+    unfold_val_type in H1. intuition.
+    admit. admit.  (* TODO these seem provable *)
+    unfold elem2 in *. unfold ℰ in *.
+    specialize (H4 vx Dx0).
+    unfold open' in *. unfold vseta_mem in *.
+    erewrite <- IHn in H3; eauto; try lia. apply H4 in H3.
+    destruct H3 as [k [vy [Heval [Dy vyDyT2]]]]. exists k. exists vy. intuition.
+    exists Dy.
+    assert (Hr : Dx :: ρ' ++ ρ = [Dx] ++ (ρ' ++ ρ)) by auto.
+    rewrite Hr. erewrite <- IHn. erewrite <- IHn.
+    assert (Hr' : Dx :: ρ = [Dx] ++ ρ) by auto.
+    rewrite Hr' in vyDyT2. erewrite <- IHn in vyDyT2.
+    (* Problem: mismatch between  *)
+    (* (open_rec 1 (varF (length ρ)) T2) *)
+    (* and (open_rec 1 (varF (length (ρ' ++ ρ))) T2) *)
+    admit.
+Admitted.
+
 Lemma val_type_extend  : forall {T ρ D}, closed_ty 0 (length ρ) T -> val_type T ρ       ⊑ val_type T (D :: ρ)
 with  val_type_shrink  : forall {T ρ D}, closed_ty 0 (length ρ) T -> val_type T (D :: ρ) ⊑ val_type T ρ.
   - clear val_type_extend.
@@ -840,15 +866,15 @@ with  val_type_shrink  : forall {T ρ D}, closed_ty 0 (length ρ) T -> val_type 
     intros. destruct T; destruct n; intuition.
     + (* TAll *)
       unfold_val_type. intros. destruct v as [ γ' T' t | γ' T' ]; eauto.
-      inversion H. subst. unfold elem2 in *. unfold ℰ in *.
-      destruct H0 as [_ [_ H0]]. intuition.
+      unfold elem2 in *. unfold ℰ in *.
+      destruct H0 as [HclT1 [HclT2 H0]]. intuition.
       eapply closed_ty_monotone; eauto.
       eapply closed_ty_monotone; eauto.
       specialize (H0 vx Dx).
       assert (HT1 : vseta_mem vx Dx (val_type T1 ρ)).  {
         unfold vseta_sub_eq in *. unfold vseta_mem in *.
         unfold vset_sub_eq in *.  intros m.
-        specialize (val_type_shrink _ _ D H5).
+        specialize (val_type_shrink _ _ D HclT1).
         specialize (val_type_shrink (S m)). simpl in val_type_shrink.
         apply val_type_shrink. eauto.
       }
