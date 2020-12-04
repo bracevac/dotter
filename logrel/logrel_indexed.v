@@ -151,6 +151,16 @@ Definition open' {A : Type} (env : list A) T := open_rec 0 (varF (length env)) T
 Definition open_tm (u : var) t := open_rec_tm 0 u t.
 Definition open_tm' {A : Type} (env : list A) t := open_rec_tm 0 (varF (length env)) t.
 
+Lemma open_rec_commute : forall T i j x y, i <> j -> open_rec i (varF x) (open_rec j (varF y) T) = open_rec j (varF y) (open_rec i (varF x) T).
+  induction T; intros; simpl; eauto;
+  try solve [rewrite IHT1; eauto; rewrite IHT2; eauto].
+  destruct v. intuition.
+  destruct (Nat.eqb i i0) eqn:Hii0; destruct (Nat.eqb j i0) eqn:Hji0; simpl;
+    try rewrite Hii0; try rewrite Hji0; auto.
+  apply beq_nat_true in Hii0. apply beq_nat_true in Hji0. subst. contradiction.
+  rewrite IHT; intuition.
+Qed.
+
 Inductive
   ctx_wf : tenv -> Prop :=
   | wf_nil  :
@@ -379,6 +389,22 @@ Lemma closed_tm_monotone : forall {b f t}, closed_tm b f t -> forall {b' f'}, b 
   intuition.
 Qed.
 
+Lemma closed_ty_varb : forall {b f x}, x < b <-> closed_ty b f (TSel (varB x)).
+  intuition. inversion H. auto.
+Qed.
+
+Lemma closed_ty_varf : forall {b f x}, x < f <-> closed_ty b f (TSel (varF x)).
+  intuition. inversion H. auto.
+Qed.
+
+Lemma closed_tm_varb : forall {b f x}, x < b <-> closed_tm b f (tvar (varB x)).
+  intuition. inversion H. auto.
+Qed.
+
+Lemma closed_tm_varf : forall {b f x}, x < f <-> closed_tm b f (tvar (varF x)).
+  intuition. inversion H. auto.
+Qed.
+
 Lemma has_type_var_length : forall {Γ x T}, has_type Γ (tvar (varF x)) T -> x < length Γ.
   intros. dependent induction H; eauto.
   apply indexr_var_some' in H0. auto.
@@ -560,6 +586,15 @@ Lemma open_preserves_size: forall T x j,
 Proof.
   intros T. induction T; intros; simpl; eauto.
   destruct v. auto. destruct (Nat.eqb j i); auto.
+Qed.
+
+Lemma closed_ty_open : forall {n T}, tsize_flat T < n -> forall {b f}, closed_ty (S b) f T -> forall {x}, x < f -> closed_ty b f (open_rec b (varF x) T).
+  induction n; destruct T; intros; simpl in H; intuition;
+    try solve [simpl; inversion H0; subst; constructor; apply IHn; intuition].
+  simpl. destruct v. inversion H0. intuition.
+  destruct (Nat.eqb b i) eqn:Heq. intuition.
+  apply closed_ty_varb. inversion H0. subst.
+  apply beq_nat_false in Heq. lia.
 Qed.
 
 Declare Scope dsub.
@@ -831,6 +866,66 @@ Qed.
 Lemma 𝒞𝓉𝓍_lengthγ : forall {Γ ρ γ}, 𝒞𝓉𝓍 Γ ρ γ -> length Γ = length γ.
   intros Γ ρ γ C. apply 𝒞𝓉𝓍_length in C. intuition.
 Qed.
+
+Lemma val_type_open_permute : forall {n T ρ δ},
+    tsize_flat T < n ->
+    closed_ty (S (S (length δ))) (length ρ) T ->
+    forall {v vs Dx Dy}, ⦑ v, vs ⦒ ⋵ val_type (open_rec (length δ) (varF (S (length ρ))) (open_rec (S (length δ)) (varF (length ρ))     T)) (δ ++ (Dx :: Dy :: ρ))
+                  <-> ⦑ v, vs ⦒ ⋵ val_type (open_rec (length δ) (varF (length ρ))     (open_rec (S (length δ)) (varF (S (length ρ))) T)) (δ ++ (Dy :: Dx :: ρ)).
+  induction n; intros T ρ δ Hsz Hcl; simpl in Hsz; destruct T; intuition.
+  - (* TAll -> *)
+    unfold vseta_mem in *. intros. simpl. simpl in H.
+    unfold_val_type. specialize (H n0). unfold_val_type in H.
+    destruct v as [ γ' T' t | γ' T' ]; simpl in * ; intuition.
+    admit. admit. (* TODO: remove the closedness predicates in logrel, strengthen the context relation instead.*)
+    specialize (H2 vx Dx0). unfold vseta_mem in *. unfold elem2 in *. unfold ℰ in *.
+    rewrite <- IHn in H1; try lia; auto. apply H2 in H1. destruct H1 as [k [vy [Heval [Vy vyVyT2]]]].
+    exists k. exists vy. intuition. exists Vy.
+    unfold open' in *.
+    rewrite (open_rec_commute _ 0 _ _ _) in vyVyT2; eauto.
+    rewrite (open_rec_commute _ 0 _ _ _) in vyVyT2; eauto.
+    rewrite (open_rec_commute _ 0 _ _ _); eauto.
+    rewrite (open_rec_commute _ 0 _ _ _); eauto.
+    assert (Hr : Dx0 :: δ ++ Dx :: Dy :: ρ = (Dx0 :: δ) ++ Dx :: Dy :: ρ) by auto.
+    assert (Hr' : Dx0 :: δ ++ Dy :: Dx :: ρ = (Dx0 :: δ) ++ Dy :: Dx :: ρ) by auto.
+    assert (Hl : S (length δ) = length (Dx0 :: δ)) by auto.
+    rewrite Hl in *. rewrite Hr in *. rewrite Hr' in *.
+    unfold vseta_mem in *. rewrite <- IHn.
+    replace (length (δ ++ Dy :: Dx :: ρ)) with (length (δ ++ Dx :: Dy :: ρ)). auto.
+    repeat rewrite app_length. auto.
+    rewrite <- open_preserves_size. lia.
+    inversion Hcl. subst.
+    admit. (* FIXME: doesn't seem provable, but we need the closed condition for TSel case *)
+    inversion Hcl. auto.
+  - (* TAll <- *)
+    unfold vseta_mem in *. intros. simpl. simpl in H.
+    unfold_val_type. specialize (H n0). unfold_val_type in H.
+    destruct v as [ γ' T' t | γ' T' ]; simpl in * ; intuition.
+    admit. admit. (* TODO: remove the closedness predicates in logrel, strengthen the context relation instead.*)
+    specialize (H2 vx Dx0). unfold vseta_mem in *. unfold elem2 in *. unfold ℰ in *.
+    rewrite IHn in H1; try lia; auto. apply H2 in H1. destruct H1 as [k [vy [Heval [Vy vyVyT2]]]].
+    exists k. exists vy. intuition. exists Vy.
+    unfold open' in *.
+    rewrite (open_rec_commute _ 0 _ _ _) in vyVyT2; eauto.
+    rewrite (open_rec_commute _ 0 _ _ _) in vyVyT2; eauto.
+    rewrite (open_rec_commute _ 0 _ _ _); eauto.
+    rewrite (open_rec_commute _ 0 _ _ _); eauto.
+    assert (Hr : Dx0 :: δ ++ Dx :: Dy :: ρ = (Dx0 :: δ) ++ Dx :: Dy :: ρ) by auto.
+    assert (Hr' : Dx0 :: δ ++ Dy :: Dx :: ρ = (Dx0 :: δ) ++ Dy :: Dx :: ρ) by auto.
+    assert (Hl : S (length δ) = length (Dx0 :: δ)) by auto.
+    rewrite Hl in *. rewrite Hr in *. rewrite Hr' in *.
+    unfold vseta_mem in *. rewrite IHn.
+    replace (length (δ ++ Dx :: Dy :: ρ)) with (length (δ ++ Dy :: Dx :: ρ)). auto.
+    repeat rewrite app_length. auto.
+    rewrite <- open_preserves_size. lia.
+    inversion Hcl. subst.
+    admit. (* FIXME *)
+    inversion Hcl. auto.
+  - (* TSel -> *)
+    simpl in *. destruct v eqn:Hv. simpl in *.
+    inversion Hcl. subst.
+    unfold_val_type.
+Admitted.
 
 Lemma val_type_open : forall {n T ρ},
     tsize_flat T < n ->
