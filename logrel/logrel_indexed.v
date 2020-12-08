@@ -481,6 +481,21 @@ Lemma splice_closed_ty' : forall {T b} {A} {D : A} {ρ ρ'},
   apply splice_closed_ty. auto. simpl. rewrite app_length. simpl. lia.
 Qed.
 
+Lemma splice_open_succ : forall {T b n j}, closed_ty b n T -> splice n (open_rec j (varF n) T) = open_rec j (varF (S n)) T.
+  induction T; simpl; intros; inversion H; subst; auto; try solve [erewrite IHT1; eauto; erewrite IHT2; eauto].
+  - simpl. destruct (le_lt_dec n x) eqn:Heq; auto. lia.
+  - destruct (PeanoNat.Nat.eqb j x) eqn:Heq; auto. simpl.
+    destruct (le_lt_dec n n) eqn:Heq'; auto. lia.
+  - erewrite IHT; eauto.
+Qed.
+
+Lemma splice_open_succ' : forall {T b} {A} {D : A} {ρ},
+    closed_ty b (length ρ) T -> splice (length ρ) (open' ρ T) = open' (D :: ρ) T.
+  intros. unfold open'. simpl. eapply splice_open_succ. eauto.
+Qed.
+
+(* closed_ty 1 (length ρ) T2 splice (length ρ) (open' ρ T2) = open' (D :: ρ) T2 *)
+
 Fixpoint weaken_ctx  {Γ}     (cwf : ctx_wf Γ)       : forall {T'}, ty_wf Γ T' -> ctx_wf   (T' :: Γ)
 with weaken_ty       {Γ T}   (twf : ty_wf Γ T)      : forall {T'}, ty_wf Γ T' -> ty_wf    (T' :: Γ) T
 with weaken_has_type {Γ t T} (ht  : has_type Γ t T) : forall {T'}, ty_wf Γ T' -> has_type (T' :: Γ) t T
@@ -1091,7 +1106,7 @@ with  val_type_shrink  : forall {T ρ D}, closed_ty 0 (length ρ) T -> val_type 
       unfold vseta_sub_eq in Hs. specialize Hs with (D:=D) (n:=(S m)).
       replace (open' (D :: ρ) T2) with (splice (length ρ) (open' ρ T2)).
       apply Hs. eapply closed_ty_open. eauto. eapply closed_ty_monotone. eauto. lia. lia. lia.
-      auto. admit. (* TODO lemma about splice and open *)
+      auto. eapply splice_open_succ'. eauto.
     + (* TSel *)
       unfold vseta_sub_eq in *. unfold vset_sub_eq. intros.
       unfold_val_type in H0. inversion H; subst. unfold_val_type. destruct (indexr x ρ) eqn:Hlookup1.
@@ -1112,8 +1127,7 @@ with  val_type_shrink  : forall {T ρ D}, closed_ty 0 (length ρ) T -> val_type 
       replace (open' (D :: ρ) T) with (splice (length ρ) (open' ρ T)).
       apply (subset_trans XsubT). apply HT.
       eapply closed_ty_open. eauto. eapply closed_ty_monotone. eauto. lia. lia. lia.
-      admit. (* TODO lemma about splice and open *)
-      eapply closed_ty_monotone; eauto.
+      eapply splice_open_succ'. eauto. eapply closed_ty_monotone; eauto.
     + (* TAnd *)
       inversion H. subst. simpl. intros. unfold_val_type in H0. unfold_val_type. intuition.
       specialize (IHT _ RAnd1 ρ D H4). apply (IHT (S n)); auto.
@@ -1141,13 +1155,12 @@ with  val_type_shrink  : forall {T ρ D}, closed_ty 0 (length ρ) T -> val_type 
       specialize (@val_type_unsplice (open' ρ T2) [Dx] ρ) as Hs. simpl in Hs.
       unfold vseta_sub_eq in Hs. specialize Hs with (D:=D) (n:=(S m)).
       apply Hs. eapply closed_ty_open. eauto. eapply closed_ty_monotone. eauto. lia. lia. lia.
-      auto. admit. (* TODO lemma about splice and open *)
+      auto. eapply splice_open_succ'. eauto.
     + (* TSel *)
       unfold vseta_sub_eq in *. unfold vset_sub_eq. intros.
       unfold_val_type in H0. inversion H; subst. unfold_val_type. destruct (indexr x ρ) eqn:Hlookup1.
       rewrite indexr_skip in H0. rewrite Hlookup1 in H0. auto. lia.
-      apply indexr_var_some in H4. destruct H4. rewrite H1 in Hlookup1. discriminate.
-      lia.
+      apply indexr_var_some in H4. destruct H4. rewrite H1 in Hlookup1. discriminate. lia.
     + (* TMem *)
       inversion H. subst. unfold vseta_sub_eq in *. unfold vset_sub_eq in *. intros. unfold_val_type in H0.
       destruct v as [ γ' T' t | γ' T' ]; eauto. unfold_val_type. destruct n; intuition.
@@ -1161,12 +1174,12 @@ with  val_type_shrink  : forall {T ρ D}, closed_ty 0 (length ρ) T -> val_type 
       replace (open' (D :: ρ) T) with (splice (length ρ) (open' ρ T)) in XsubT.
       apply (subset_trans XsubT). apply HT.
       eapply closed_ty_open. eauto. eapply closed_ty_monotone. eauto. lia. lia. lia.
-      admit. (* TODO lemma about splice and open *)
+      eapply splice_open_succ'. eauto.
     + (* TAnd *)
       inversion H. subst. simpl. intros. unfold_val_type in H0. unfold_val_type. intuition.
       specialize (IHT _ RAnd1 ρ D H4). apply (IHT (S n)); auto.
       specialize (IHT _ RAnd2 ρ D H5). apply (IHT (S n)); auto.
-Admitted.
+Admitted. (* FIXME : coq cannot guess decreasing argument of fix *)
 
 Lemma val_type_closed : forall {T ρ v D}, ⦑ v, D ⦒ ⋵ (val_type T ρ) -> closed_ty 0 (length ρ) T.
   unfold vseta_mem. simpl.
