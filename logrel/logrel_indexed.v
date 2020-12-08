@@ -443,14 +443,43 @@ Fixpoint splice (n : nat) (T : ty) {struct T} : ty :=
   | TTop           => TTop
   | TBot           => TBot
   | TAll  T1 T2    => TAll  (splice n T1) (splice n T2)
-  | TSel  (varF i) => if le_lt_dec n i then TSel (varF (S i))    (* a varF variable is inserted *)
-                      else TSel (varF i)     (* a varF variable is appended *)
+  | TSel  (varF i) => if le_lt_dec n i then TSel (varF (S i))
+                      else TSel (varF i)
   | TSel  (varB i) => TSel  (varB i)
   | TMem  T1 T2    => TMem  (splice n T1) (splice n T2)
   | TBind T        => TBind (splice n T)
   | TAnd  T1 T2    => TAnd  (splice n T1) (splice n T2)
   end.
 
+Lemma splice_open : forall {T j n m}, splice n (open_rec j (varF (m + n)) T) = open_rec j (varF (S (m + n))) (splice n T).
+  induction T; intros; auto; try solve [simpl; rewrite IHT1; rewrite IHT2; auto].
+  - destruct v; simpl. destruct (le_lt_dec n i) eqn:Heq; auto.
+    destruct (PeanoNat.Nat.eqb j i) eqn:Heq; auto.
+    simpl. destruct (le_lt_dec n (m + n)) eqn:Heq'. auto.
+    lia.
+  - simpl. rewrite IHT. auto.
+Qed.
+
+Lemma splice_open' :  forall {T} {A} {D : A} {ρ ρ'}, splice (length ρ') (open' (ρ ++ ρ') T) = open' (ρ ++ D :: ρ') (splice (length ρ') T).
+  intros. unfold open'.
+  replace (length (ρ ++ ρ')) with ((length ρ) + (length ρ')).
+  replace (length (ρ ++ D :: ρ')) with (S (length ρ) + (length ρ')).
+  apply splice_open.
+  rewrite app_length. simpl. lia.
+  rewrite app_length. auto.
+Qed.
+
+Lemma splice_closed_ty : forall {T b n m}, closed_ty b (n + m) T -> closed_ty b (S (n + m)) (splice m T).
+  induction T; simpl; intros; inversion H; subst; intuition.
+  destruct (le_lt_dec m x) eqn:Heq; intuition.
+Qed.
+
+Lemma splice_closed_ty' : forall {T b} {A} {D : A} {ρ ρ'},
+    closed_ty b (length (ρ ++ ρ')) T ->  closed_ty b (length (ρ ++ D :: ρ')) (splice (length ρ') T).
+  intros. rewrite app_length in H.
+  replace (length (ρ ++ D :: ρ')) with (S (length ρ) + (length ρ')).
+  apply splice_closed_ty. auto. simpl. rewrite app_length. simpl. lia.
+Qed.
 
 Fixpoint weaken_ctx  {Γ}     (cwf : ctx_wf Γ)       : forall {T'}, ty_wf Γ T' -> ctx_wf   (T' :: Γ)
 with weaken_ty       {Γ T}   (twf : ty_wf Γ T)      : forall {T'}, ty_wf Γ T' -> ty_wf    (T' :: Γ) T
@@ -934,7 +963,8 @@ However, this'll lead to trouble in the TAll case, where we need the former!
 
 The solution is splitting into two separate lemmas using the ⊑ relation which
 keeps the n in each of the respective inclusion directions in sync.
-*)
+ *)
+(* TODO: can we avoid the duplication of the proof code? *)
 Lemma val_type_splice: forall {T ρ ρ'},
     closed_ty 0 (length (ρ ++ ρ')) T -> forall {D}, val_type T (ρ ++ ρ') ⊑ val_type (splice (length ρ') T) (ρ ++ D :: ρ')
 with val_type_unsplice: forall {T ρ ρ'},
@@ -944,7 +974,8 @@ with val_type_unsplice: forall {T ρ ρ'},
     + (* TAll *)
       inversion H. subst. simpl. intros. destruct v as [ γ' T' t | γ' T' ]; intuition.
       unfold_val_type. unfold_val_type in H0. intuition.
-      admit. admit.  (* TODO : see if we can remove the ugly closedness conditions from val_type *)
+      apply splice_closed_ty'. auto. apply splice_closed_ty'. auto.
+      (* TODO : see if we can remove the ugly closedness conditions from val_type *)
       unfold vseta_mem in *. unfold elem2 in *. unfold ℰ in *.
       assert (HT1: forall n : nat, val_type T1 (ρ ++ ρ') (S n) (Dx n) vx). {
         intros m. apply (val_type_unsplice _ _ _ H1 D (S m)). auto.
@@ -955,8 +986,7 @@ with val_type_unsplice: forall {T ρ ρ'},
       specialize (IHT _ (@RAll2 _ _ _ (ρ ++ ρ')) (Dx :: ρ) ρ') with (D:= D) (n:= S m) as IHT2.
       apply IHT2.
       unfold open'. simpl. eapply closed_ty_open. eauto. eapply closed_ty_monotone. eauto. lia. lia. lia.
-      auto.
-      admit. (* TODO : lemma about opening and splicing *)
+      auto. apply splice_open'.
     + (* TSel *)
       inversion H; subst; try lia. simpl. intros.
       unfold_val_type in H0. destruct (indexr x (ρ ++ ρ')) eqn:Hlookup; intuition.
@@ -969,7 +999,8 @@ with val_type_unsplice: forall {T ρ ρ'},
       specialize (IHT _ RMem1 ρ ρ' H4 D n) as IHT1.
       specialize (IHT _ RMem2 ρ ρ' H5 D n) as IHT2.
       unfold_val_type. unfold_val_type in H0. intuition.
-      admit. admit. (* TODO : see if we can remove the ugly closedness conditions from val_type *)
+      apply splice_closed_ty'. auto. apply splice_closed_ty'. auto.
+      (* TODO : see if we can remove the ugly closedness conditions from val_type *)
       specialize (val_type_unsplice _ _ _ H1 D n).
       eapply subset'_trans; eauto. eapply subset'_trans; eauto.
     + (* TBind *)
@@ -980,13 +1011,12 @@ with val_type_unsplice: forall {T ρ ρ'},
       replace (open' (ρ ++ D :: ρ') (splice (length ρ') T)) with (splice (length ρ') (open' (ρ ++ ρ') T)).
       apply (subset_trans XinT). unfold vseta_sub_eq. apply IHT.
       eapply closed_ty_open. eauto. eapply closed_ty_monotone. eauto. lia. lia. lia.
-      admit. (* TODO : lemma about opening and splicing *)
-      admit. (* TODO : lemma about closed_ty and splicing *)
+      apply splice_open'. apply splice_closed_ty'. auto.
     + (* TAnd *)
       inversion H. subst. simpl. intros. unfold_val_type. unfold_val_type in H0. intuition.
       specialize (IHT _ RAnd1 _ _ H4 D (S n)). apply IHT. auto.
       specialize (IHT _ RAnd2 _ _ H5 D (S n)). apply IHT. auto.
-  - clear val_type_unsplice.  induction T as [T IHT] using (well_founded_induction wfR).
+  - clear val_type_unsplice. induction T as [T IHT] using (well_founded_induction wfR).
     intros. destruct T; intuition; unfold vseta_sub_eq in *; intros n; destruct n; intuition.
     + (* TAll *)
       inversion H. subst. simpl. intros. destruct v as [ γ' T' t | γ' T' ]; intuition.
@@ -1001,8 +1031,7 @@ with val_type_unsplice: forall {T ρ ρ'},
       specialize (IHT _ (@RAll2 _ _ _ (ρ ++ ρ')) (Dx :: ρ) ρ') with (D:= D) (n:= S m) as IHT2.
       apply IHT2.
       unfold open'. simpl. eapply closed_ty_open. eauto. eapply closed_ty_monotone. eauto. lia. lia. lia.
-      auto.
-      admit. (* TODO : lemma about opening and splicing *)
+      auto. apply splice_open'.
     + (* TSel *)
       inversion H; subst; try lia. simpl. intros.
       destruct (le_lt_dec (length ρ') x) as [Hx | Hx]; simpl in H0.
@@ -1027,14 +1056,15 @@ with val_type_unsplice: forall {T ρ ρ'},
       replace (open' (ρ ++ D :: ρ') (splice (length ρ') T)) with (splice (length ρ') (open' (ρ ++ ρ') T)) in XinT.
       apply (subset_trans XinT). unfold vseta_sub_eq. apply IHT.
       eapply closed_ty_open. eauto. eapply closed_ty_monotone. eauto. lia. lia. lia.
-      admit. (* TODO : lemma about opening and splicing *)
+      apply splice_open'.
     + (* TAnd *)
       inversion H. subst. simpl. intros. unfold_val_type. unfold_val_type in H0. intuition.
       specialize (IHT _ RAnd1 _ _ H4 D (S n)). apply IHT. auto.
       specialize (IHT _ RAnd2 _ _ H5 D (S n)). apply IHT. auto.
-Admitted.
+Admitted. (* FIXME : coq cannot guess decreasing argument of fix *)
 
-Lemma val_type_extend  : forall {T ρ D}, closed_ty 0 (length ρ) T -> val_type T ρ        ⊑ val_type T (D :: ρ)
+(* TODO: can we avoid the duplication of the proof code? *)
+Lemma val_type_extend  : forall {T ρ D}, closed_ty 0 (length ρ) T -> val_type T ρ       ⊑ val_type T (D :: ρ)
 with  val_type_shrink  : forall {T ρ D}, closed_ty 0 (length ρ) T -> val_type T (D :: ρ) ⊑ val_type T ρ.
   - clear val_type_extend.
     induction T as [T IHT] using (well_founded_induction wfR).
