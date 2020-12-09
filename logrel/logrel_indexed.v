@@ -889,8 +889,7 @@ Definition val_type_naked (T : ty) : (forall T', R T' T -> denv -> Dom) -> denv 
 
 
   | TAll T1 T2    => fun val_type ρ =>
-                      {{ '(vabs γ _ t) D n | closed_ty 0 (length ρ) T1 /\ closed_ty 1 (length ρ) T2 /\
-                                            forall vx Dx, ⦑ vx, Dx ⦒ ⋵ (val_type T1 RAll1 ρ) ->
+                      {{ '(vabs γ _ t) D n | forall vx Dx, ⦑ vx, Dx ⦒ ⋵ (val_type T1 RAll1 ρ) ->
                                                      ⟨ (vx :: γ) , (open_tm' γ t)  ⟩ ∈ ℰ (val_type (open' ρ T2) RAll2 (Dx :: ρ))  }}
 
   | TSel (varF x) => fun _ ρ =>
@@ -900,10 +899,10 @@ Definition val_type_naked (T : ty) : (forall T', R T' T -> denv -> Dom) -> denv 
                        end
 
   | TMem T1 T2    => fun val_type ρ =>
-                      {{ '(vty γ T) D n | closed_ty 0 (length ρ) T1 /\ closed_ty 0 (length ρ) T2 /\ (val_type T1 RMem1 ρ n) ⊑# D /\ D ⊑# (val_type T2 RMem2 ρ n) }}
+                      {{ '(vty γ T) D n | (val_type T1 RMem1 ρ n) ⊑# D /\ D ⊑# (val_type T2 RMem2 ρ n) }}
 
   | TBind T       => fun val_type ρ =>
-                      ⨆{{ X | X ⊑ (val_type (open' ρ T) RBind (X :: ρ)) /\ closed_ty 1 (length ρ) T }}
+                      ⨆{{ X | X ⊑ (val_type (open' ρ T) RBind (X :: ρ)) }}
                       (* {{ v D n | exists X, X n = D /\ (val_type (open' ρ T) RBind (X :: ρ) (S n) D v) }} *)
 
   | TAnd T1 T2    => fun val_type ρ =>
@@ -939,29 +938,6 @@ Ltac unfold_val_type :=
   unfold val_type; rewrite Fix_eq;
   [ simpl; repeat fold val_type | apply val_type_extensional ].
 
-(* Env relations *)
-Inductive 𝒞𝓉𝓍 : tenv -> denv -> venv -> Prop :=
-| 𝒞𝓉𝓍_nil :
-    𝒞𝓉𝓍 [] [] []
-| 𝒞𝓉𝓍_cons : forall {Γ ρ γ T v D},
-    𝒞𝓉𝓍 Γ ρ γ  ->
-    ⦑ v, D ⦒ ⋵ (val_type T ρ) ->
-    𝒞𝓉𝓍 (T :: Γ) (D :: ρ) (v :: γ)
-.
-Hint Constructors 𝒞𝓉𝓍 : dsub.
-
-Lemma 𝒞𝓉𝓍_length : forall {Γ ρ γ}, 𝒞𝓉𝓍 Γ ρ γ -> length Γ = length γ /\ length γ = length ρ.
-  intros Γ ρ γ C. induction C; simpl; intuition.
-Qed.
-
-Lemma 𝒞𝓉𝓍_lengthρ : forall {Γ ρ γ}, 𝒞𝓉𝓍 Γ ρ γ -> length Γ = length ρ.
-  intros Γ ρ γ C. apply 𝒞𝓉𝓍_length in C. intuition.
-Qed.
-
-Lemma 𝒞𝓉𝓍_lengthγ : forall {Γ ρ γ}, 𝒞𝓉𝓍 Γ ρ γ -> length Γ = length γ.
-  intros Γ ρ γ C. apply 𝒞𝓉𝓍_length in C. intuition.
-Qed.
-
 (*
 Formulating the lemma in this way
 
@@ -990,10 +966,10 @@ Lemma val_type_splice': forall {T ρ ρ'},
         unfold_val_type; unfold_val_type in H0; intuition;
           try (apply splice_closed_ty'; auto); unfold vseta_mem in *; unfold elem2 in *; unfold ℰ in *.
     assert (HT1: forall n : nat, val_type T1 (ρ ++ ρ') (S n) (Dx n) vx). {
-      intros m. apply ((proj2 (IHT _ RAll1 _ _ H1)) D (S m)). auto. }
+      intros m. apply ((proj2 (IHT _ RAll1 _ _ H4)) D (S m)). auto. }
     Focus 2. assert (HT1: forall n : nat, val_type (splice (length ρ') T1) (ρ ++ D :: ρ') (S n) (Dx n) vx). {
       intros m. apply ((proj1 (IHT _ RAll1 _ _ H4)) D (S m)). auto. } Unfocus.
-    all:  destruct (H3 vx Dx HT1) as [k [vy [Heval [vsy HT2]]]]; exists k; exists vy; intuition;
+    all:  destruct (H0 vx Dx HT1) as [k [vy [Heval [vsy HT2]]]]; exists k; exists vy; intuition;
       exists vsy; unfold vseta_mem in *; intros m.
     replace (open' (ρ ++ D :: ρ') (splice (length ρ') T2)) with (splice (length ρ') (open' (ρ ++ ρ') T2)).
     Focus 3. replace (open' (ρ ++ D :: ρ') (splice (length ρ') T2)) with (splice (length ρ') (open' (ρ ++ ρ') T2)) in HT2.
@@ -1020,10 +996,9 @@ Lemma val_type_splice': forall {T ρ ρ'},
       inversion H; subst; simpl; intros; destruct v as [ γ' T' t | γ' T' ]; intuition.
     specialize (proj2 (IHT _ RMem1 ρ ρ' H4) D n) as IHT1.
     specialize (proj1 (IHT _ RMem2 ρ ρ' H5) D n) as IHT2.
-    2 : specialize (proj1 (IHT _ RMem1 ρ ρ' H4) D n) as IHT1.
-    2:  specialize (proj2 (IHT _ RMem2 ρ ρ' H5) D n) as IHT2.
+    2: specialize (proj1 (IHT _ RMem1 ρ ρ' H4) D n) as IHT1.
+    2: specialize (proj2 (IHT _ RMem2 ρ ρ' H5) D n) as IHT2.
     all : unfold_val_type; unfold_val_type in H0; intuition.
-    1,2 : apply splice_closed_ty'; auto.
     all : eapply subset'_trans; eauto.
   - (* TBind *)
     inversion H. subst.
@@ -1031,11 +1006,11 @@ Lemma val_type_splice': forall {T ρ ρ'},
       simpl. intros. eapply closed_ty_open. eauto. eapply closed_ty_monotone. eauto. lia. lia. lia. }
     intuition; unfold vseta_sub_eq in *; intros n; destruct n; intuition;
       inversion H; subst; simpl; intros; unfold_val_type; unfold_val_type in H0;
-        destruct H0 as [X [[XinT _] vvs'X]]; exists X;
+        destruct H0 as [X [XinT vvs'X]]; exists X;
           specialize (IHT _ (@RBind _ _ (ρ ++ ρ')) _ _ (HclT X)); simpl in IHT.
     replace (open' (ρ ++ D :: ρ') (splice (length ρ') T)) with (splice (length ρ') (open' (ρ ++ ρ') T)).
     3: replace (open' (ρ ++ D :: ρ') (splice (length ρ') T)) with (splice (length ρ') (open' (ρ ++ ρ') T)) in XinT.
-    2, 4: apply splice_open'. all: intuition. 2: apply splice_closed_ty'; auto.
+    2, 4: apply splice_open'. all: intuition.
     all : apply (subset_trans XinT); unfold vseta_sub_eq. apply H0. apply H1.
   - (* TAnd *)
     inversion H. subst. specialize (IHT _ RAnd1 _ _ H4) as IHT1. specialize (IHT _ RAnd2 _ _ H5).
@@ -1059,9 +1034,7 @@ Lemma val_type_extend'  : forall {T ρ}, closed_ty 0 (length ρ) T -> forall {D}
   intros. unfold vseta_sub_eq in *. destruct T; inversion H; subst; try solve [intuition].
   - (* TAll *) split; destruct n; intuition; unfold_val_type;
       intros; destruct v as [ γ' T' t | γ' T' ]; eauto;
-        unfold elem2 in *; unfold ℰ in *;
-    destruct H0 as [HclT1 [HclT2 H0]]; intuition.
-    1,2 : eapply closed_ty_monotone; eauto. all : specialize (H0 vx Dx).
+        unfold elem2 in *; unfold ℰ in *; intuition; specialize (H0 vx Dx).
     assert (HT1 : vseta_mem vx Dx (val_type T1 ρ)).  {
       unfold vseta_sub_eq in *. unfold vseta_mem in *.
       unfold vset_sub_eq in *.  intros m.
@@ -1092,15 +1065,13 @@ Lemma val_type_extend'  : forall {T ρ}, closed_ty 0 (length ρ) T -> forall {D}
   - (* TMem *)
     split; destruct n; intuition; unfold vseta_sub_eq in *; unfold vset_sub_eq in *; intros; unfold_val_type in H0;
       destruct v as [ γ' T' t | γ' T' ]; eauto; unfold_val_type; destruct n; intuition.
-    1-4 : eapply closed_ty_monotone; eauto.
     all : specialize ((proj1 (IHT _ RMem1 _ H4 D)) (S n)) as IH1; simpl in IH1.
     all : specialize ((proj2 (IHT _ RMem1 _ H4 D)) (S n)) as IH1'; simpl in IH1'.
     all : specialize ((proj1 (IHT _ RMem2 _ H5 D)) (S n)) as IH2; simpl in IH2.
     all : specialize ((proj2 (IHT _ RMem2 _ H5 D)) (S n)) as IH2'; simpl in IH2'.
     all : eapply subset'_trans; eauto.
   - (* TBind *)
-    split; destruct n; intuition; unfold_val_type; intros; destruct H0 as [X [[XsubT _] vs'vX]]; exists X; intuition.
-    2 : eapply closed_ty_monotone; eauto.
+    split; destruct n; intuition; unfold_val_type; intros; destruct H0 as [X [XsubT vs'vX]]; exists X; intuition.
     specialize (@val_type_splice (open' ρ T) [X] ρ) as HT; simpl in HT.
     2: specialize (@val_type_unsplice (open' ρ T) [X] ρ) as HT; simpl in HT.
     replace (open' (D :: ρ) T) with (splice (length ρ) (open' ρ T)).
@@ -1123,29 +1094,13 @@ Lemma val_type_shrink  : forall {T ρ D}, closed_ty 0 (length ρ) T -> val_type 
   intros. apply (proj2 (val_type_extend' H)).
 Qed.
 
-Lemma val_type_closed : forall {T ρ v D}, ⦑ v, D ⦒ ⋵ (val_type T ρ) -> closed_ty 0 (length ρ) T.
-  unfold vseta_mem. simpl.
-  induction T as [T IHT] using (well_founded_induction wfR).
-  intros. destruct T; intuition.
-  - unfold_val_type in H. specialize (H 0). destruct v as [ γ' T' t | γ' T' ]; intuition.
-  - unfold_val_type in H. destruct v0. destruct (indexr i ρ) eqn:Heq.
-    apply indexr_var_some' in Heq. intuition. specialize (H 0). simpl in H. contradiction.
-    specialize (H 0). simpl in H. contradiction.
-  - specialize (H 0). unfold_val_type in H. destruct v as [ γ' T' t | γ' T' ]; intuition.
-  - specialize (H 0). unfold_val_type in H. repeat destruct H. intuition.
-  - unfold_val_type in H. constructor.
-    + specialize (IHT _ RAnd1 ρ v D). apply IHT.
-      intros n. specialize (H n). intuition.
-    + specialize (IHT _ RAnd2 ρ v D). apply IHT.
-      intros n. specialize (H n). intuition.
-Qed.
-
 (* TODO this wouldn't be necessary if ⊑ was formulated in terms of ⋵ *)
-Lemma val_type_extend_mem  : forall {T ρ v D D'}, ⦑ v, D ⦒ ⋵ (val_type T ρ) -> ⦑ v, D ⦒ ⋵ (val_type T (D' :: ρ)).
-  intros. assert (Hc : closed_ty 0 (length ρ) T) by (apply (val_type_closed H)).
-  apply (@val_type_extend _ _ D') in Hc.
+Lemma val_type_extend_mem  : forall {T ρ v D D'},
+    closed_ty 0 (length ρ) T -> ⦑ v, D ⦒ ⋵ (val_type T ρ) -> ⦑ v, D ⦒ ⋵ (val_type T (D' :: ρ)).
+  intros.
+  apply (@val_type_extend _ _ D') in H.
   unfold vseta_mem in *. unfold vseta_sub_eq in *. intros.
-  specialize (Hc (S n)). unfold vset_sub_eq in *. simpl in *.
+  specialize (H (S n)). unfold vset_sub_eq in *. simpl in *.
   eauto.
 Qed.
 
@@ -1154,6 +1109,30 @@ Lemma val_type_shrink'  : forall {T ρ v D D' n}, closed_ty 0 (length ρ) T -> (
   intros.
   specialize (@val_type_shrink T ρ D' H (S n) (D n) v) as Hv.
   auto.
+Qed.
+
+(* Env relations *)
+Inductive 𝒞𝓉𝓍 : tenv -> denv -> venv -> Prop :=
+| 𝒞𝓉𝓍_nil :
+    𝒞𝓉𝓍 [] [] []
+| 𝒞𝓉𝓍_cons : forall {Γ ρ γ T v D},
+    𝒞𝓉𝓍 Γ ρ γ  ->
+    closed_ty 0 (length Γ) T ->
+    ⦑ v, D ⦒ ⋵ (val_type T ρ) ->
+    𝒞𝓉𝓍 (T :: Γ) (D :: ρ) (v :: γ)
+.
+Hint Constructors 𝒞𝓉𝓍 : dsub.
+
+Lemma 𝒞𝓉𝓍_length : forall {Γ ρ γ}, 𝒞𝓉𝓍 Γ ρ γ -> length Γ = length γ /\ length γ = length ρ.
+  intros Γ ρ γ C. induction C; simpl; intuition.
+Qed.
+
+Lemma 𝒞𝓉𝓍_lengthρ : forall {Γ ρ γ}, 𝒞𝓉𝓍 Γ ρ γ -> length Γ = length ρ.
+  intros Γ ρ γ C. apply 𝒞𝓉𝓍_length in C. intuition.
+Qed.
+
+Lemma 𝒞𝓉𝓍_lengthγ : forall {Γ ρ γ}, 𝒞𝓉𝓍 Γ ρ γ -> length Γ = length γ.
+  intros Γ ρ γ C. apply 𝒞𝓉𝓍_length in C. intuition.
 Qed.
 
 (* Bundles facts about lookups in related envs *)
@@ -1169,6 +1148,7 @@ Record LookupT (x : id) (Γ : tenv) (ρ : denv) (γ : venv) : Type :=
       l_x_γ_v    : indexr x γ = Some l_v;
       (* l_𝒞𝓉𝓍      : 𝒞𝓉𝓍 (l_T :: l_Γ2) (l_D :: l_ρ2) (l_v :: l_γ2); *)
       l_vD_in_Tρ : ⦑ l_v, l_D ⦒ ⋵ (val_type l_T ρ);
+      l_T_closed : closed_ty 0 (length Γ) l_T;
       (* l_Γ_split  : Γ = l_Γ1 ++ (l_T :: l_Γ2); *)
       (* l_ρ_split  : ρ = l_ρ1 ++ (l_D :: l_ρ2); *)
       (* l_γ_split  : γ = l_γ1 ++ (l_v :: l_γ2); *)
@@ -1182,6 +1162,7 @@ Arguments l_x_ρ_D    {x Γ ρ γ}.
 Arguments l_x_γ_v    {x Γ ρ γ}.
 Arguments l_vD_in_Tρ {x Γ ρ γ}.
 Arguments l_x_in_Dom {x Γ ρ γ}.
+Arguments l_T_closed {x Γ ρ γ}.
 
 (* Enables doing induction on C in the lookup lemma *)
 Inductive Lookup (x : id) Γ ρ γ : Prop :=
@@ -1190,20 +1171,23 @@ Inductive Lookup (x : id) Γ ρ γ : Prop :=
 Lemma lookup {Γ ρ γ} (C : 𝒞𝓉𝓍 Γ ρ γ) : forall {x}, x < length Γ -> Lookup x Γ ρ γ.
   induction C; simpl; intros.
   - lia.
-  - inversion H0.
+  - inversion H1.
     + constructor. econstructor.
       simpl. lia.
       apply indexr_head.
       rewrite (𝒞𝓉𝓍_lengthρ C). apply indexr_head.
       rewrite (𝒞𝓉𝓍_lengthγ C). apply indexr_head.
-      apply val_type_extend_mem. assumption.
-    + apply IHC in H2. inversion H2. destruct X.
+      apply val_type_extend_mem. rewrite (𝒞𝓉𝓍_lengthρ C) in H. auto. auto.
+      simpl. eapply closed_ty_monotone; eauto.
+    + apply IHC in H3. inversion H3. destruct X.
       constructor. econstructor.
       simpl. lia.
       rewrite indexr_skip. eauto. lia.
       rewrite indexr_skip. eauto. rewrite <- (𝒞𝓉𝓍_lengthρ C). lia.
       rewrite indexr_skip. eauto. rewrite <- (𝒞𝓉𝓍_lengthγ C). lia.
-      apply val_type_extend_mem. assumption.
+      apply val_type_extend_mem. rewrite (𝒞𝓉𝓍_lengthρ C) in H.
+      rewrite (𝒞𝓉𝓍_lengthρ C) in l_T_closed0. auto. auto.
+      simpl. eapply closed_ty_monotone; eauto.
 Qed.
 
 Lemma fundamental     : (forall {Γ t T}, has_type Γ t T -> forall{ρ γ}, 𝒞𝓉𝓍 Γ ρ γ -> ⟨ γ , t ⟩ ∈ ℰ (val_type T ρ))
@@ -1217,15 +1201,10 @@ Proof.
     + (* t_typ *)
       exists 1. exists (vty γ T). split. simpl. auto. exists (val_type T ρ). unfold vseta_mem.
       intros. simpl. unfold_val_type. repeat split.
-      rewrite <- (𝒞𝓉𝓍_lengthρ HΓργ). eapply ty_wf_closed. eauto.
-      rewrite <- (𝒞𝓉𝓍_lengthρ HΓργ). eapply ty_wf_closed. eauto.
       apply seteq'_refl. apply seteq'_refl.
     + (* t_abs *)
       exists 1. exists (vabs γ T1 t). split. simpl. reflexivity.
       exists vseta_top. unfold vseta_mem. unfold_val_type. unfold vseta_mem. intros n.
-      repeat split. rewrite <- (𝒞𝓉𝓍_lengthρ HΓργ). eapply ty_wf_closed. eauto.
-      rewrite <- (𝒞𝓉𝓍_lengthρ HΓργ). apply has_type_closed in Hty. destruct Hty.
-      admit. (* TODO relation between closed and open *)
       intros vx Dx vxDxinT1.
       unfold ℰ in *; unfold elem2 in *.
       assert (HOt : (open_tm' γ t) = (open_tm' Γ t)). {
@@ -1238,13 +1217,14 @@ Proof.
       }
       rewrite HOt. rewrite HOT2. apply IHHty.
       constructor; intuition.
+      apply ty_wf_closed in H. auto.
     + (* t_app *)
       unfold vseta_mem in *. simpl in IHHty1. simpl in IHHty2.
       specialize (IHHty1 _ _ HΓργ). specialize (IHHty2 _ _ HΓργ).
       destruct IHHty1 as [k1 [v1 [evalv1 [vs1 v1vs1inVtyT1T2 ]]]].
       destruct IHHty2 as [k2 [v2 [evalv2 [vs2 v2vs2inVtyT1]]]].
       unfold_val_type in v1vs1inVtyT1T2. destruct v1 as [ γ' T' t' | γ' T' ].
-      specialize (v1vs1inVtyT1T2 0). destruct v1vs1inVtyT1T2 as [cT1 [cT2 v1vs1inVtyT1T2]].
+      specialize (v1vs1inVtyT1T2 0).
       specialize (v1vs1inVtyT1T2 v2 vs2 v2vs2inVtyT1).
       unfold ℰ in *. unfold elem2 in *.
       destruct v1vs1inVtyT1T2 as [k3 [v3 [evalapp [vs3 v3vs3inVtyT2] ]]].
@@ -1254,20 +1234,20 @@ Proof.
       simpl. erewrite evalv2. simpl. erewrite evalv1. erewrite evalapp.
       reflexivity. lia. lia. lia. exists vs3. simpl.
       assert (HT2open' : (open' ρ T2) = T2). {
-        admit. (* consequence of H : ty_wf Γ T2 *)
+        apply ty_wf_closed in H.
+        admit. (* needs lemma *)
       }
       rewrite HT2open' in *. unfold vseta_mem in *.
       intros n. eapply val_type_shrink'.
       rewrite <- (𝒞𝓉𝓍_lengthρ HΓργ). eapply ty_wf_closed. auto.
-      eauto.
-      contradiction.
+      eauto. contradiction.
     + (* t_dapp *)
       unfold vseta_mem in *. simpl in IHHty1. simpl in IHHty2.
       specialize (IHHty1 _ _ HΓργ). specialize (IHHty2 _ _ HΓργ).
       destruct IHHty1 as [k1 [v1 [evalv1 [vs1 v1vs1inVtyT1T2 ]]]].
       destruct IHHty2 as [k2 [v2 [evalv2 [vs2 v2vs2inVtyT1]]]].
       unfold_val_type in v1vs1inVtyT1T2. destruct v1 as [ γ' T' t' | γ' T' ].
-      specialize (v1vs1inVtyT1T2 0). destruct v1vs1inVtyT1T2 as [cT1 [cT2 v1vs1inVtyT1T2]].
+      specialize (v1vs1inVtyT1T2 0).
       specialize (v1vs1inVtyT1T2 v2 vs2 v2vs2inVtyT1).
       unfold ℰ in *. unfold elem2 in *.
       destruct v1vs1inVtyT1T2 as [k3 [v3 [evalapp [vs3 v3vs3inVtyT2] ]]].
@@ -1316,11 +1296,8 @@ Proof.
     + (* stp_mem *)
       unfold_val_type in H. destruct v as [ γ' T t | γ' T ]. contradiction.
       specialize (IHHst1 _ _ HΓργ n). specialize (IHHst2 _ _ HΓργ n).
-      destruct H as [ clS1 [clT1 [S1subX XsubT1 ]]]. unfold_val_type. repeat split.
-      rewrite <- (𝒞𝓉𝓍_lengthρ HΓργ). apply stp_closed in Hst1. intuition.
-      rewrite <- (𝒞𝓉𝓍_lengthρ HΓργ). apply stp_closed in Hst2. intuition.
-      eapply subset'_trans. eauto. assumption.
-      eapply subset'_trans. eauto. assumption.
+      destruct H as [S1subX XsubT1]. unfold_val_type. repeat split.
+      all : eapply subset'_trans; eauto; assumption.
     + (* stp_sel1 *)
       specialize (IHHst _ _ HΓργ). pose (HL := H). apply indexr_var_some' in HL.
       apply (lookup HΓργ) in HL. inversion HL as [L]. destruct L.
@@ -1341,13 +1318,9 @@ Proof.
       unfold_val_type in H0. rewrite l_x_ρ_D0 in H0. intuition.
     + (* stp_all *)
       unfold_val_type in H1. destruct v as [γ' T' t | γ' T'] eqn:Hv; try contradiction.
-      destruct H1 as [clS1 [clT1 H1]]. unfold_val_type.
-      unfold ℰ in *. unfold elem2 in *. repeat split.
-      rewrite <- (𝒞𝓉𝓍_lengthρ HΓργ). apply stp_closed in Hst1. intuition.
-      rewrite <- (𝒞𝓉𝓍_lengthρ HΓργ). apply stp_closed in Hst2. admit. (*TODO relation between closed and open*)
+      unfold_val_type. unfold ℰ in *. unfold elem2 in *. repeat split.
       intros vx Dx vxMem. specialize (IHHst1 _ _ HΓργ).
       assert (HvsDxS1 : vseta_mem vx Dx (val_type S1 ρ)). {
-        (* TODO: it might be better to formulate  ⊑ in terms of vseta_mem, might save a few annoying manual steps *)
         unfold vseta_mem in *.
         intros m. specialize (IHHst1 (S m)).
         intuition.
@@ -1363,12 +1336,15 @@ Proof.
       rewrite <- Hopen2. exists Dy.
       unfold vseta_mem. intros m. simpl.
       unfold vseta_sub_eq in IHHst2.
-      assert (HC: 𝒞𝓉𝓍 (S2 :: Γ) (Dx :: ρ) (vx :: γ)) by intuition.
+      assert (HC: 𝒞𝓉𝓍 (S2 :: Γ) (Dx :: ρ) (vx :: γ)). {
+        constructor; intuition. inversion H0.
+        apply ty_wf_closed in H5. auto.
+      }
       specialize (IHHst2 _ _ HC (S m)).
       apply IHHst2. rewrite Hopen1. intuition.
     + (* stp_bindx *)
       subst. unfold_val_type in H3. unfold_val_type.
-      destruct H3 as [F [[Fsub clT1] FMem]]. exists F.
+      destruct H3 as [F [Fsub FMem]]. exists F.
       assert (HOT1 : (open' ρ T1) = (open' Γ T1)). {
         unfold open'. rewrite (𝒞𝓉𝓍_lengthρ HΓργ). auto.
       }
@@ -1377,12 +1353,12 @@ Proof.
       }
       rewrite HOT1 in *. rewrite HOT2 in *.
       repeat split. eapply subset_trans. eapply Fsub.
-      eapply IHHst. constructor. eauto. unfold vseta_mem.
+      eapply IHHst. constructor. eauto. inversion H1.
+      admit. (* TODO this is a problem *)
+      unfold vseta_mem.
       intros. simpl. unfold vseta_sub_eq in Fsub. specialize (Fsub (S n0)).
       unfold vset_sub_eq in Fsub.
-      admit.
-      rewrite <- (𝒞𝓉𝓍_lengthρ HΓργ). apply stp_closed in Hst. admit. (*TODO relation between closed and open*)
-      assumption.
+      admit. assumption.
     + (* stp_and11 *)
       specialize (IHHst _ _ HΓργ (S n)).
       unfold_val_type in H0. intuition.
