@@ -494,8 +494,6 @@ Lemma splice_open_succ' : forall {T b} {A} {D : A} {ρ},
   intros. unfold open'. simpl. eapply splice_open_succ. eauto.
 Qed.
 
-(* closed_ty 1 (length ρ) T2 splice (length ρ) (open' ρ T2) = open' (D :: ρ) T2 *)
-
 Fixpoint weaken_ctx  {Γ}     (cwf : ctx_wf Γ)       : forall {T'}, ty_wf Γ T' -> ctx_wf   (T' :: Γ)
 with weaken_ty       {Γ T}   (twf : ty_wf Γ T)      : forall {T'}, ty_wf Γ T' -> ty_wf    (T' :: Γ) T
 with weaken_has_type {Γ t T} (ht  : has_type Γ t T) : forall {T'}, ty_wf Γ T' -> has_type (T' :: Γ) t T
@@ -956,8 +954,7 @@ keeps the n in each of the respective inclusion directions in sync.
  *)
 Lemma val_type_splice': forall {T ρ ρ'},
     closed_ty 0 (length (ρ ++ ρ')) T ->
-    (forall {D}, val_type T (ρ ++ ρ') ⊑ val_type (splice (length ρ') T) (ρ ++ D :: ρ')) /\
-    (forall {D}, val_type (splice (length ρ') T) (ρ ++ D :: ρ') ⊑ val_type T (ρ ++ ρ')).
+    forall {D}, val_type T (ρ ++ ρ') === val_type (splice (length ρ') T) (ρ ++ D :: ρ').
   induction T as [T IHT] using (well_founded_induction wfR).
   intros. destruct T; try solve [intuition].
   - (* TAll *)
@@ -966,9 +963,9 @@ Lemma val_type_splice': forall {T ρ ρ'},
         unfold_val_type; unfold_val_type in H0; intuition;
           try (apply splice_closed_ty'; auto); unfold vseta_mem in *; unfold elem2 in *; unfold ℰ in *.
     assert (HT1: forall n : nat, val_type T1 (ρ ++ ρ') (S n) (Dx n) vx). {
-      intros m. apply ((proj2 (IHT _ RAll1 _ _ H4)) D (S m)). auto. }
+      intros m. apply ((proj2 (IHT _ RAll1 _ _ H4 D)) (S m)). auto. }
     Focus 2. assert (HT1: forall n : nat, val_type (splice (length ρ') T1) (ρ ++ D :: ρ') (S n) (Dx n) vx). {
-      intros m. apply ((proj1 (IHT _ RAll1 _ _ H4)) D (S m)). auto. } Unfocus.
+      intros m. apply ((proj1 (IHT _ RAll1 _ _ H4 D)) (S m)). auto. } Unfocus.
     all:  destruct (H0 vx Dx HT1) as [k [vy [Heval [vsy HT2]]]]; exists k; exists vy; intuition;
       exists vsy; unfold vseta_mem in *; intros m.
     replace (open' (ρ ++ D :: ρ') (splice (length ρ') T2)) with (splice (length ρ') (open' (ρ ++ ρ') T2)).
@@ -977,7 +974,7 @@ Lemma val_type_splice': forall {T ρ ρ'},
     all: specialize (IHT _ (@RAll2 _ _ _ (ρ ++ ρ')) (Dx :: ρ) ρ') as IHT2;
       assert (Hc : closed_ty 0 (length ((Dx :: ρ) ++ ρ')) (open' (ρ ++ ρ') T2)).
     1,3: unfold open'; simpl; eapply closed_ty_open; eauto; eapply closed_ty_monotone; eauto; lia; lia; lia.
-    all : apply IHT2 in Hc. apply (proj1 Hc D (S m)); auto. apply (proj2 Hc D (S m)). apply HT2.
+    all : eapply IHT2 in Hc. apply (proj1 Hc (S m)); auto. apply (proj2 Hc (S m)). apply HT2.
   - (* TSel *)
     intuition; unfold vseta_sub_eq in *; intros n; destruct n; intuition;
     inversion H; subst; try lia; simpl; intros.
@@ -994,10 +991,10 @@ Lemma val_type_splice': forall {T ρ ρ'},
   - (* TMem *)
     intuition; unfold vseta_sub_eq in *; intros n; destruct n; intuition;
       inversion H; subst; simpl; intros; destruct v as [ γ' T' t | γ' T' ]; intuition.
-    specialize (proj2 (IHT _ RMem1 ρ ρ' H4) D n) as IHT1.
-    specialize (proj1 (IHT _ RMem2 ρ ρ' H5) D n) as IHT2.
-    2: specialize (proj1 (IHT _ RMem1 ρ ρ' H4) D n) as IHT1.
-    2: specialize (proj2 (IHT _ RMem2 ρ ρ' H5) D n) as IHT2.
+    specialize (proj2 (IHT _ RMem1 ρ ρ' H4 D) n) as IHT1.
+    specialize (proj1 (IHT _ RMem2 ρ ρ' H5 D) n) as IHT2.
+    2: specialize (proj1 (IHT _ RMem1 ρ ρ' H4 D) n) as IHT1.
+    2: specialize (proj2 (IHT _ RMem2 ρ ρ' H5 D) n) as IHT2.
     all : unfold_val_type; unfold_val_type in H0; intuition.
     all : eapply subset'_trans; eauto.
   - (* TBind *)
@@ -1007,16 +1004,16 @@ Lemma val_type_splice': forall {T ρ ρ'},
     intuition; unfold vseta_sub_eq in *; intros n; destruct n; intuition;
       inversion H; subst; simpl; intros; unfold_val_type; unfold_val_type in H0;
         destruct H0 as [X [XinT vvs'X]]; exists X;
-          specialize (IHT _ (@RBind _ _ (ρ ++ ρ')) _ _ (HclT X)); simpl in IHT.
+          specialize (IHT _ (@RBind _ _ (ρ ++ ρ')) _ _ (HclT X) D); simpl in IHT.
     replace (open' (ρ ++ D :: ρ') (splice (length ρ') T)) with (splice (length ρ') (open' (ρ ++ ρ') T)).
     3: replace (open' (ρ ++ D :: ρ') (splice (length ρ') T)) with (splice (length ρ') (open' (ρ ++ ρ') T)) in XinT.
     2, 4: apply splice_open'. all: intuition.
     all : apply (subset_trans XinT); unfold vseta_sub_eq. apply H0. apply H1.
   - (* TAnd *)
-    inversion H. subst. specialize (IHT _ RAnd1 _ _ H4) as IHT1. specialize (IHT _ RAnd2 _ _ H5).
+    inversion H. subst. specialize (IHT _ RAnd1 _ _ H4 D) as IHT1. specialize (IHT _ RAnd2 _ _ H5 D).
     intuition; unfold vseta_sub_eq in *; intros n; destruct n; intuition; simpl; intros vs' v HD;
       unfold_val_type; unfold_val_type in HD; intuition.
-    apply (H2 D (S n)). auto. apply (H0 D (S n)). auto. apply (H3 D (S n)). auto. apply (H1 D (S n)). auto.
+    apply (H2 (S n)). auto. apply (H0 (S n)). auto. apply (H3 (S n)). auto. apply (H1 (S n)). auto.
 Qed.
 
 Lemma val_type_splice: forall {T ρ ρ'},
