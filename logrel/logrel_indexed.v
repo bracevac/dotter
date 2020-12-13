@@ -14,9 +14,14 @@ Import ListNotations.
   - Overall more high level with definitions that are easier relatable
     to pen and paper formulation.
   - Standard formulation of fundamental lemma for typing and subtyping.
-  - Makes clear that self-recursive types have greatest fixpoint semantics.
   - Logical relation definition (val_type) with better performance, using Coq's
     well-founded recursion library.
+
+  TODOs :
+
+  - Construction of context relations and assms in fundamental lemma is fishy w.r.t.
+    TBind (already in ECOOP version!)
+  - TBind as general fixpoint on the domain, to prepare for richer recursive types.
 
   Compatible with Coq 8.12.1.
 *)
@@ -908,8 +913,8 @@ Definition val_type_naked (T : ty) : (forall T', R T' T -> denv -> Dom) -> denv 
                       {{ '(vty γ T) D n | (val_type T1 RMem1 ρ n) ⊑# D /\ D ⊑# (val_type T2 RMem2 ρ n) }}
 
   | TBind T       => fun val_type ρ =>
-                      ⨆{{ X | X ⊑ (val_type (open' ρ T) RBind (X :: ρ)) }}
-                      (* {{ v D n | exists X, X n = D /\ (val_type (open' ρ T) RBind (X :: ρ) (S n) D v) }} *)
+                      (* ⨆{{ X | X ⊑ (val_type (open' ρ T) RBind (X :: ρ)) }} *)
+                      {{ v D n | exists X, X n = D /\ (val_type (open' ρ T) RBind (X :: ρ) (S n) D v) }}
 
   | TAnd T1 T2    => fun val_type ρ =>
                       (val_type T1 RAnd1 ρ) ⊓ (val_type T2 RAnd2 ρ)
@@ -1011,12 +1016,11 @@ Lemma val_type_splice': forall {T ρ ρ'},
       simpl. intros. eapply closed_ty_open. eauto. eapply closed_ty_monotone. eauto. lia. lia. lia. }
     intuition; unfold vseta_sub_eq in *; intros n; destruct n; intuition;
       inversion H; subst; simpl; intros; unfold_val_type; unfold_val_type in H0;
-        destruct H0 as [X [XinT vvs'X]]; exists X;
+        destruct H0 as [X [Xnvs' vvs'TX]]; exists X; intuition;
           specialize (IHT _ (@RBind _ _ (ρ ++ ρ')) _ _ (HclT X) D); simpl in IHT.
     replace (open' (ρ ++ D :: ρ') (splice (length ρ') T)) with (splice (length ρ') (open' (ρ ++ ρ') T)).
-    3: replace (open' (ρ ++ D :: ρ') (splice (length ρ') T)) with (splice (length ρ') (open' (ρ ++ ρ') T)) in XinT.
-    2, 4: apply splice_open'. all: intuition.
-    all : apply (subset_trans XinT); unfold vseta_sub_eq. apply H0. apply H1.
+    3: replace (open' (ρ ++ D :: ρ') (splice (length ρ') T)) with (splice (length ρ') (open' (ρ ++ ρ') T)) in vvs'TX.
+    2, 4: apply splice_open'. all : intuition. apply (H0 (S n)). auto. apply (H1 (S n)). auto.
   - (* TAnd *)
     inversion H. subst. specialize (IHT _ RAnd1 _ _ H4 D) as IHT1. specialize (IHT _ RAnd2 _ _ H5 D).
     intuition; unfold vseta_sub_eq in *; intros n; destruct n; intuition; simpl; intros vs' v HD;
@@ -1076,12 +1080,13 @@ Lemma val_type_extend'  : forall {T ρ}, closed_ty 0 (length ρ) T -> forall {D}
     all : specialize ((proj2 (IHT _ RMem2 _ H5 D)) (S n)) as IH2'; simpl in IH2'.
     all : eapply subset'_trans; eauto.
   - (* TBind *)
-    split; destruct n; intuition; unfold_val_type; intros; destruct H0 as [X [XsubT vs'vX]]; exists X; intuition.
+    split; destruct n; intuition; unfold_val_type; intros; destruct H0 as [X [Xnvs' vvs'TX]]; exists X; intuition.
     specialize (@val_type_splice (open' ρ T) [X] ρ) as HT; simpl in HT.
     2: specialize (@val_type_unsplice (open' ρ T) [X] ρ) as HT; simpl in HT.
     replace (open' (D :: ρ) T) with (splice (length ρ) (open' ρ T)).
-    3 : replace (open' (D :: ρ) T) with (splice (length ρ) (open' ρ T)) in XsubT.
-    2,4: eapply splice_open_succ'; eauto. all : apply (subset_trans XsubT); apply HT.
+    3 : replace (open' (D :: ρ) T) with (splice (length ρ) (open' ρ T)) in vvs'TX.
+    2,4: eapply splice_open_succ'; eauto. all : unfold vseta_sub_eq in HT.
+    all : specialize HT with (D := D) (n := (S n)). all : apply HT; auto.
     all : eapply closed_ty_open; eauto; eapply closed_ty_monotone; eauto; lia; lia; lia.
   - (* TAnd *)
     split; destruct n; intuition; simpl; intros; unfold_val_type in H0; unfold_val_type; intuition;
@@ -1209,7 +1214,7 @@ Lemma invert_var : forall {Γ x T}, has_type Γ (tvar (varF x)) T ->
     inversion gv1. inversion rD1. subst. unfold vseta_mem in *. simpl. auto.
   - specialize (IHHT Heqv HC). destruct IHHT as [v [D [gv [rD vDTx ]]]].
     exists v. exists D. intuition. unfold_val_type.
-    unfold vseta_mem in *. unfold vseta_big_join.
+    unfold vseta_mem in *. intros n. exists D. intuition.
     admit. (* TODO lemma *)
   - specialize (IHHT H0 HC). destruct IHHT as [v [D [gv [rD vDT1]]]].
     exists v. exists D. intuition. specialize (fstp _ _ _ H _ _ HC).
