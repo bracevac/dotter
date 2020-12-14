@@ -1159,6 +1159,40 @@ Lemma val_type_rewire : forall {T b ρ' ρ},
     1,3 : simpl; lia.
     apply (IHU (S m)). auto. apply (IHD (S m)). auto.
   - (* TSel *)
+    split; destruct n; intuition; unfold vseta_sub_eq in *; unfold vset_sub_eq; intros;
+      simpl; simpl in H2; destruct (le_lt_dec (length ρ) x0) eqn:Hcmp; simpl; simpl in H2.
+    1, 2: specialize (@val_type_splice (TSel (varF x0)) ρ' ρ) as HSp.
+    3, 4: specialize (@val_type_unsplice (TSel (varF x0)) ρ' ρ) as HSp.
+    all : unfold vseta_sub_eq in HSp; unfold vset_sub_eq in HSp; specialize HSp with (D:=D) (n:= (S n));
+      simpl in HSp; rewrite Hcmp in HSp; apply HSp; try solve [constructor; auto]; auto.
+  - (* TSel VarB *)
+    split; destruct n; intuition; unfold vseta_sub_eq in *; unfold vset_sub_eq; intros;
+      simpl; simpl in H2; destruct (Nat.eqb j x0) eqn:Hcmp; simpl; simpl in H2; unfold_val_type;
+        unfold_val_type in H2; eauto.
+    rewrite indexr_skips. simpl. rewrite PeanoNat.Nat.eqb_refl.
+    rewrite indexr_skips in H2. rewrite H0 in H2. auto.
+    apply indexr_var_some' in H0. auto. simpl. lia.
+    rewrite indexr_skips. rewrite H0.
+    rewrite indexr_skips in H2. simpl in H2. rewrite PeanoNat.Nat.eqb_refl in H2.
+    auto. simpl. lia. apply indexr_var_some' in H0. auto.
+  - (* TMem *)
+    split; destruct n; intuition; unfold vseta_sub_eq in *; unfold vset_sub_eq in *; intros; unfold_val_type in H2;
+      destruct v as [ γ' T' t | γ' T' ]; eauto; unfold_val_type; destruct n; intuition.
+    all : specialize ((proj1 (IHT _ RMem1 _ _ _ H6 _ D H0 _ H1)) (S n)) as IH1; simpl in IH1.
+    all : specialize ((proj2 (IHT _ RMem1 _ _ _ H6 _ D H0 _ H1)) (S n)) as IH1'; simpl in IH1'.
+    all : specialize ((proj1 (IHT _ RMem2 _ _ _ H7 _ D H0 _ H1)) (S n)) as IH2; simpl in IH2.
+    all : specialize ((proj2 (IHT _ RMem2 _ _ _ H7 _ D H0 _ H1)) (S n)) as IH2'; simpl in IH2'.
+    all : eapply subset'_trans; eauto.
+  - (* TBind *)
+    split; destruct n; intuition; simpl; unfold_val_type; intros; destruct H2 as [X [Xnvs' vvs'TX]];
+      unfold_val_type; exists X; intuition; unfold open' in *.
+    all : rewrite open_rec_commute; auto; rewrite open_rec_commute in vvs'TX; auto.
+    all : specialize (@splice_open' T Dom D ρ' ρ) as HSp; unfold open' in HSp.
+    rewrite <- HSp. 2: rewrite <- HSp in vvs'TX.
+    all: specialize (IHT _ (@RBind _ _ (ρ' ++ ρ)) (S b) (X :: ρ') ρ) with (x := x) (D := D) (j := (S j)).
+    all : unfold open' in IHT; edestruct IHT as [IHU IHD]; auto.
+    1,4 : admit. (* TODO need a more general variant of closed_ty_open eapply closed_ty_open; eauto. *)
+    1,3 : lia. apply (IHU (S n)). auto. apply (IHD (S n)). auto.
 Admitted.
 
 (* Env relations *)
