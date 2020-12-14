@@ -464,6 +464,12 @@ Fixpoint splice (n : nat) (T : ty) {struct T} : ty :=
   | TAnd  T1 T2    => TAnd  (splice n T1) (splice n T2)
   end.
 
+Lemma splice_id : forall {T b f}, closed_ty b f T -> (splice f T ) = T.
+  induction T; intros; inversion H; subst; simpl; auto; try solve [erewrite IHT1; eauto; erewrite IHT2; eauto].
+  destruct (le_lt_dec f x) eqn:Heq. lia. auto.
+  erewrite IHT; eauto.
+Qed.
+
 Lemma splice_open : forall {T j n m}, splice n (open_rec j (varF (m + n)) T) = open_rec j (varF (S (m + n))) (splice n T).
   induction T; intros; auto; try solve [simpl; rewrite IHT1; rewrite IHT2; auto].
   - destruct v; simpl. destruct (le_lt_dec n i) eqn:Heq; auto.
@@ -701,6 +707,14 @@ Lemma closed_ty_open_ge : forall {n T}, tsize_flat T < n -> forall {b f}, closed
   destruct (Nat.eqb b i) eqn:Heq. intuition.
   apply closed_ty_varb. inversion H0. subst.
   apply beq_nat_false in Heq. lia.
+Qed.
+
+Lemma closed_ty_open_succ : forall {n T}, tsize_flat T < n ->  forall {b f}, closed_ty b f T -> forall {j}, closed_ty b (S f) (open_rec j (varF f) T).
+  induction n; destruct T; intros; simpl in H; intuition;
+    try solve [simpl; inversion H0; subst; constructor; apply IHn; intuition].
+  simpl. destruct v. eapply closed_ty_monotone; eauto.
+  destruct (Nat.eqb j i) eqn:Heq. intuition.
+  eapply closed_ty_monotone; eauto.
 Qed.
 
 Declare Scope dsub.
@@ -1121,7 +1135,7 @@ Lemma val_type_shrink'  : forall {T ρ v D D' n}, closed_ty 0 (length ρ) T -> (
   auto.
 Qed.
 
-Lemma val_type_rewire : forall {T b ρ' ρ},
+Lemma val_type_rewire' : forall {T b ρ' ρ},
     closed_ty b (length (ρ' ++ ρ)) T ->
     forall {x D}, indexr x ρ = Some D ->
              forall {j}, j < b -> val_type (open_rec j (varF x) T) (ρ' ++ ρ) === val_type (open_rec j (varF (length ρ)) (splice (length ρ) T)) (ρ' ++ D :: ρ).
@@ -1155,7 +1169,7 @@ Lemma val_type_rewire : forall {T b ρ' ρ},
     all : unfold open' in HSp. rewrite <- HSp. 2 : rewrite <- HSp in HvyinT2.
     all : specialize (IHT _ (@RAll2 _ _ _ (ρ' ++ ρ)) (S b) (Dx :: ρ') ρ) with (x := x) (D := D) (j := (S j)).
     all : unfold open' in IHT; edestruct IHT as [IHU IHD]; auto.
-    1,4 : admit. (* TODO need a more general variant of closed_ty_open eapply closed_ty_open; eauto. *)
+    1,4 : eapply closed_ty_open_succ; eauto.
     1,3 : simpl; lia.
     apply (IHU (S m)). auto. apply (IHD (S m)). auto.
   - (* TSel *)
@@ -1191,9 +1205,23 @@ Lemma val_type_rewire : forall {T b ρ' ρ},
     rewrite <- HSp. 2: rewrite <- HSp in vvs'TX.
     all: specialize (IHT _ (@RBind _ _ (ρ' ++ ρ)) (S b) (X :: ρ') ρ) with (x := x) (D := D) (j := (S j)).
     all : unfold open' in IHT; edestruct IHT as [IHU IHD]; auto.
-    1,4 : admit. (* TODO need a more general variant of closed_ty_open eapply closed_ty_open; eauto. *)
+    1,4 : eapply closed_ty_open_succ; eauto.
     1,3 : lia. apply (IHU (S n)). auto. apply (IHD (S n)). auto.
-Admitted.
+  - (* TAnd *)
+    split; destruct n; intuition; simpl; intros; unfold_val_type in H2; unfold_val_type; intuition;
+      specialize (proj1 (IHT _ RAnd1 _ _ _ H6 _ D H0 _ H1) (S n)) as IH1;
+      specialize (proj2 (IHT _ RAnd1 _ _ _ H6 _ D H0 _ H1) (S n)) as IH1';
+      specialize (proj1 (IHT _ RAnd2 _ _ _ H7 _ D H0 _ H1) (S n)) as IH2;
+      specialize (proj2 (IHT _ RAnd2 _ _ _ H7 _ D H0 _ H1) (S n)) as IH2'; auto.
+Qed.
+
+Lemma val_type_rewire : forall {T b ρ},
+    closed_ty (S b) (length ρ) T ->
+    forall {x D}, indexr x ρ = Some D ->
+                  val_type (open (varF x) T) ρ === val_type (open' ρ T) (D :: ρ).
+  intros. specialize (@val_type_rewire' T (S b) [] ρ) with (x:=x) (D:=D) (j:=0) as Hw.
+  simpl in Hw. erewrite splice_id in Hw. destruct Hw; eauto. lia. eauto.
+Qed.
 
 (* Env relations *)
 Inductive 𝒞𝓉𝓍 : tenv -> denv -> venv -> Prop :=
@@ -1290,12 +1318,14 @@ Lemma invert_var : forall {Γ x T}, has_type Γ (tvar (varF x)) T ->
     exists v. exists D. intuition. unfold_val_type.
     unfold vseta_mem in *. intros n. exists D. intuition.
     apply ty_wf_closed in H. inversion H. subst.
-    admit. (* TODO lemma *)
+    specialize (vDTx n). rewrite (𝒞𝓉𝓍_lengthρ HC) in H3.
+    destruct (val_type_rewire H3 rD) as [HU _].
+    unfold open'. unfold vseta_sub_eq in HU. apply (HU (S n)). auto.
   - specialize (IHHT H0 HC). destruct IHHT as [v [D [gv [rD vDT1]]]].
     exists v. exists D. intuition. specialize (fstp _ _ _ H _ _ HC).
     unfold vseta_mem in *. unfold vseta_sub_eq in fstp.
     intros n. specialize (fstp (S n)). apply fstp. auto.
-Admitted.
+Qed. (* TODO: it might be necessary to make this Defined for the main proof*)
 
 (* Fixpoint *)
 (*   fundamental {Γ : tenv } {t : tm} {T : ty} *)
@@ -1361,26 +1391,27 @@ Proof.
       rewrite <- (𝒞𝓉𝓍_lengthρ HΓργ). eapply ty_wf_closed. auto.
       eauto. contradiction.
     + (* t_dapp *)
-      unfold vseta_mem in *. simpl in IHHty1. simpl in IHHty2.
-      specialize (IHHty1 _ _ HΓργ). specialize (IHHty2 _ _ HΓργ).
+      unfold vseta_mem in *. simpl in IHHty1. clear IHHty2.
+      specialize (IHHty1 _ _ HΓργ).
       destruct IHHty1 as [k1 [v1 [evalv1 [vs1 v1vs1inVtyT1T2 ]]]].
-      destruct IHHty2 as [k2 [v2 [evalv2 [vs2 v2vs2inVtyT1]]]].
+      destruct (@invert_var _ _ _ Hty2 fundamental_stp _ _ HΓργ) as [v2 [vs2 [xgv2 [xrvs2 v2vs2inVtyT1]]]].
+      assert (evalv2 : eval 1 γ (tvar (varF x)) = Done v2). {
+        simpl. rewrite xgv2. auto.
+      }
       unfold_val_type in v1vs1inVtyT1T2. destruct v1 as [ γ' T' t' | γ' T' ].
       specialize (v1vs1inVtyT1T2 0).
       specialize (v1vs1inVtyT1T2 v2 vs2 v2vs2inVtyT1).
       unfold ℰ in *. unfold elem2 in *.
       destruct v1vs1inVtyT1T2 as [k3 [v3 [evalapp [vs3 v3vs3inVtyT2] ]]].
-      exists (k1 + k2 + k3). exists v3. split.
-      destruct k1; destruct k2; destruct k3; try solve [ simpl in *; discriminate].
+      exists (k1 + 1 + k3). exists v3. split.
+      destruct k1; destruct k3; try solve [ simpl in *; discriminate].
       eapply eval_monotone in evalv1. eapply eval_monotone in evalapp. eapply eval_monotone in evalv2.
-      simpl. erewrite evalv2. simpl. erewrite evalv1. erewrite evalapp.
+      simpl. erewrite evalv2. erewrite evalv1. erewrite evalapp.
       reflexivity. lia. lia. lia. exists vs3. simpl. unfold vseta_mem in *. simpl in *.
-      (* TODO We can argue that what we add something which is already *)
-      (* in the environment at x, so it does not matter if we open T2 *)
-      (* with x directly or the head of the runtime env γ'. For the same reason, we can
-       justify taking the original ρ. Careful: in general, x does not equal |γ'|,
-       so we cannot show (open' γ' T2) = (open x T2)! *)
-      admit.
+      intros n. specialize (v3vs3inVtyT2 n).
+      apply has_type_closed in Hty1. destruct Hty1. inversion c0. subst.
+      rewrite (𝒞𝓉𝓍_lengthρ HΓργ) in H4. destruct (val_type_rewire H4 xrvs2) as [_ HD].
+      unfold vseta_sub_eq in HD. apply (HD (S n)). auto.
       contradiction.
     + (* t_and *)
       specialize (IHHty1 _ _ HΓργ). specialize (IHHty2 _ _ HΓργ).
@@ -1403,6 +1434,7 @@ Proof.
       exists (val_type (open (varF x) T) ρ). split.
       admit. (* TODO *)
       eauto.
+      admit.
     + (* t_unpack *)
       simpl in IHHty1. simpl in IHHty2.
       specialize (IHHty1 _ _ HΓργ). destruct IHHty1 as [k1 [v1 [evalv1 [vs1 v1vs1inVtyT1T2 ]]]].
@@ -1482,13 +1514,14 @@ Proof.
         unfold open'. rewrite (𝒞𝓉𝓍_lengthρ HΓργ). auto.
       }
       rewrite HOT1 in *. rewrite HOT2 in *.
-      repeat split. eapply subset_trans. eapply Fsub.
-      eapply IHHst. constructor. eauto. inversion H1.
-      admit. (* TODO this is a problem *)
-      unfold vseta_mem.
-      intros. simpl. unfold vseta_sub_eq in Fsub. specialize (Fsub (S n0)).
-      unfold vset_sub_eq in Fsub.
-      admit. assumption.
+      intuition.
+      admit.
+      (* eapply IHHst. constructor. eauto. inversion H1. *)
+      (* admit. (* TODO this is a problem *) *)
+      (* unfold vseta_mem. *)
+      (* intros. simpl. unfold vseta_sub_eq in Fsub. specialize (Fsub (S n0)). *)
+      (* unfold vset_sub_eq in Fsub. *)
+      (* admit. assumption. *)
     + (* stp_and11 *)
       specialize (IHHst _ _ HΓργ (S n)).
       unfold_val_type in H0. intuition.
