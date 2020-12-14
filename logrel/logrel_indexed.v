@@ -1121,6 +1121,46 @@ Lemma val_type_shrink'  : forall {T ρ v D D' n}, closed_ty 0 (length ρ) T -> (
   auto.
 Qed.
 
+Lemma val_type_rewire : forall {T b ρ' ρ},
+    closed_ty b (length (ρ' ++ ρ)) T ->
+    forall {x D}, indexr x ρ = Some D ->
+             forall {j}, j < b -> val_type (open_rec j (varF x) T) (ρ' ++ ρ) === val_type (open_rec j (varF (length ρ)) (splice (length ρ) T)) (ρ' ++ D :: ρ).
+  induction T as [T IHT] using (well_founded_induction wfR).
+  intros. unfold vseta_sub_eq in *. destruct T; inversion H; subst; try solve [intuition].
+  - (* TAll *)
+     split; destruct n; intuition; simpl;
+       intros; destruct v as [ γ' T' t | γ' T' ]; eauto; unfold_val_type; unfold_val_type in H2;
+         unfold elem2 in *; unfold ℰ in *; intuition; specialize (H2 vx Dx).
+     (* TODO: just as in our agda development, there is a nice proof combinator for Pi types lurking
+      in this file's proofs. *)
+     assert (HT1 : vseta_mem vx Dx (val_type (open_rec j (varF x) T1) (ρ' ++ ρ))). {
+      unfold vseta_sub_eq in *. unfold vseta_mem in *.
+      unfold vset_sub_eq in *.  intros m.
+      specialize (proj2 (IHT _ RAll1 _ _ _ H6 _ _ H0 _ H1) (S m)) as IH1.
+      simpl in *. apply IH1. auto. }
+     Focus 2. assert (HT1 : vseta_mem vx Dx (val_type (open_rec j (varF (length ρ)) (splice (length ρ) T1))
+                                                      (ρ' ++ D :: ρ))). {
+      unfold vseta_sub_eq in *. unfold vseta_mem in *.
+      unfold vset_sub_eq in *.  intros m.
+      specialize (proj1 (IHT _ RAll1 _ _ _ H6 _ _ H0 _ H1) (S m)) as IH1.
+      simpl in *. apply IH1. auto. } Unfocus.
+    all : apply H2 in HT1; destruct HT1 as [k [vy [Heval [vsy HvyinT2]]]];
+      exists k; exists vy; intuition; exists vsy; unfold vseta_mem in *;
+        intros m; specialize (HvyinT2 m).
+    all : unfold open' in *.
+    (* to apply the IH for T2, we first need a bit of massaging *)
+    all : rewrite open_rec_commute in HvyinT2; auto.
+    all : rewrite open_rec_commute; auto.
+    all : specialize (@splice_open' T2 Dom D ρ' ρ) as HSp.
+    all : unfold open' in HSp. rewrite <- HSp. 2 : rewrite <- HSp in HvyinT2.
+    all : specialize (IHT _ (@RAll2 _ _ _ (ρ' ++ ρ)) (S b) (Dx :: ρ') ρ) with (x := x) (D := D) (j := (S j)).
+    all : unfold open' in IHT; edestruct IHT as [IHU IHD]; auto.
+    1,4 : admit. (* TODO need a more general variant of closed_ty_open eapply closed_ty_open; eauto. *)
+    1,3 : simpl; lia.
+    apply (IHU (S m)). auto. apply (IHD (S m)). auto.
+  - (* TSel *)
+Admitted.
+
 (* Env relations *)
 Inductive 𝒞𝓉𝓍 : tenv -> denv -> venv -> Prop :=
 | 𝒞𝓉𝓍_nil :
@@ -1215,6 +1255,7 @@ Lemma invert_var : forall {Γ x T}, has_type Γ (tvar (varF x)) T ->
   - specialize (IHHT Heqv HC). destruct IHHT as [v [D [gv [rD vDTx ]]]].
     exists v. exists D. intuition. unfold_val_type.
     unfold vseta_mem in *. intros n. exists D. intuition.
+    apply ty_wf_closed in H. inversion H. subst.
     admit. (* TODO lemma *)
   - specialize (IHHT H0 HC). destruct IHHT as [v [D [gv [rD vDT1]]]].
     exists v. exists D. intuition. specialize (fstp _ _ _ H _ _ HC).
