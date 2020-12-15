@@ -1375,18 +1375,24 @@ Proof.
       rewrite gv'' in evalx. inversion evalx. subst.
       exists D'''. unfold vseta_mem in *. simpl. intuition.
     + (* t_var_pack *)
-      specialize (IHHty _ _ HΓργ).  destruct IHHty as [k [v [evalv [vs vvsinVtyTx ]]]].
-      exists k. exists v. split. auto. exists vs.
-      unfold_val_type. unfold vseta_mem. intros. unfold vseta_big_join.
-      exists (val_type (open (varF x) T) ρ). split.
-      admit. (* TODO *)
-      eauto.
-      admit.
+      specialize (invert_var Hty fundamental_stp HΓργ) as HT.
+      destruct HT as [v [vs [xgv [xrvs vvsinVtyTx ]]]].
+      exists 1. exists v. split. simpl. rewrite xgv. reflexivity.
+      exists vs.  unfold_val_type. unfold vseta_mem in *. intros.
+      exists vs. intuition.  specialize (vvsinVtyTx n).
+      apply ty_wf_closed in H. inversion H. subst.
+      rewrite (𝒞𝓉𝓍_lengthρ HΓργ) in H3. destruct (val_type_rewire H3 xrvs) as [HU _].
+      unfold vseta_sub_eq in HU. apply (HU (S n)). auto.
     + (* t_unpack *)
       simpl in IHHty1. simpl in IHHty2.
       specialize (IHHty1 _ _ HΓργ). destruct IHHty1 as [k1 [v1 [evalv1 [vs1 v1vs1inVtyT1T2 ]]]].
-      remember (val_type (TBind T1) ρ) as F. unfold_val_type in HeqF.
+      edestruct IHHty2. constructor; eauto. subst. apply has_type_closed in Hty1.
+      destruct Hty1. inversion c0. subst. admit. (* TODO problem *)
+      unfold vseta_mem in *. unfold_val_type in v1vs1inVtyT1T2.
+      intros. specialize (v1vs1inVtyT1T2 n). destruct v1vs1inVtyT1T2 as [X [Xvs1 vtyT1]].
+      unfold open' in *. rewrite (𝒞𝓉𝓍_lengthρ HΓργ) in H. rewrite <- H in vtyT1.
       admit. (* TODO *)
+      admit.
     + (* t_sub *)
       specialize (IHHty _ _ HΓργ).
       destruct IHHty as [k [v [Heval [vs vinVtyT1] ]]].
@@ -1453,7 +1459,7 @@ Proof.
       apply IHHst2. rewrite Hopen1. intuition.
     + (* stp_bindx *)
       subst. unfold_val_type in H3. unfold_val_type.
-      destruct H3 as [F [Fsub FMem]]. exists F.
+      destruct H3 as [X [Xvs' XT1]]. exists X. intuition.
       assert (HOT1 : (open' ρ T1) = (open' Γ T1)). {
         unfold open'. rewrite (𝒞𝓉𝓍_lengthρ HΓργ). auto.
       }
@@ -1461,14 +1467,11 @@ Proof.
         unfold open'. rewrite (𝒞𝓉𝓍_lengthρ HΓργ). auto.
       }
       rewrite HOT1 in *. rewrite HOT2 in *.
-      intuition.
+      unfold vseta_sub_eq in IHHst. specialize IHHst with (n := (S n)).
+      eapply IHHst; eauto. constructor; eauto.
+      admit. (* TODO problem *)
+      unfold vseta_mem. intros.
       admit.
-      (* eapply IHHst. constructor. eauto. inversion H1. *)
-      (* admit. (* TODO this is a problem *) *)
-      (* unfold vseta_mem. *)
-      (* intros. simpl. unfold vseta_sub_eq in Fsub. specialize (Fsub (S n0)). *)
-      (* unfold vset_sub_eq in Fsub. *)
-      (* admit. assumption. *)
     + (* stp_and11 *)
       specialize (IHHst _ _ HΓργ (S n)).
       unfold_val_type in H0. intuition.
