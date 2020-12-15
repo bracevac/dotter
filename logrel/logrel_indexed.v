@@ -1053,61 +1053,8 @@ intros. apply (proj2 (val_type_splice' H)).
 Qed.
 
 Lemma val_type_extend'  : forall {T ρ}, closed_ty 0 (length ρ) T -> forall {D}, val_type T ρ === val_type T (D :: ρ).
-  induction T as [T IHT] using (well_founded_induction wfR).
-  intros. unfold vseta_sub_eq in *. destruct T; inversion H; subst; try solve [intuition].
-  - (* TAll *) split; destruct n; intuition; unfold_val_type;
-      intros; destruct v as [ γ' T' t | γ' T' ]; eauto;
-        unfold elem2 in *; unfold ℰ in *; intuition; specialize (H0 vx Dx).
-    assert (HT1 : vseta_mem vx Dx (val_type T1 ρ)).  {
-      unfold vseta_sub_eq in *. unfold vseta_mem in *.
-      unfold vset_sub_eq in *.  intros m.
-      specialize (proj2 (IHT _ RAll1 _ H4 D) (S m)) as IH1.
-      simpl in *. apply IH1. auto. }
-    Focus 2. assert (HT1 : vseta_mem vx Dx (val_type T1 (D :: ρ))). {
-      unfold vseta_sub_eq in *. unfold vseta_mem in *.
-      unfold vset_sub_eq in *.  intros m.
-      specialize (proj1 (IHT _ RAll1 _ H4 D) (S m)) as IH1.
-      simpl in *. apply IH1. auto. } Unfocus.
-    all : apply H0 in HT1; destruct HT1 as [k [vy [Heval [vsy HvyinT2]]]];
-      exists k; exists vy; intuition; exists vsy; unfold vseta_mem in *;
-        intros m; specialize (HvyinT2 m).
-    specialize (@val_type_splice (open' ρ T2) [Dx] ρ) as Hs. simpl in Hs.
-    2  : specialize (@val_type_unsplice (open' ρ T2) [Dx] ρ) as Hs; simpl in Hs.
-    all: unfold vseta_sub_eq in Hs; specialize Hs with (D:=D) (n:=(S m)).
-    replace (open' (D :: ρ) T2) with (splice (length ρ) (open' ρ T2)).
-    3   : replace (open' (D :: ρ) T2) with (splice (length ρ) (open' ρ T2)) in HvyinT2.
-    2,4 : eapply splice_open_succ'; eauto. all : apply Hs.
-    1,3 : eapply closed_ty_open; eauto; eapply closed_ty_monotone; eauto; lia; lia; lia.
-    all : auto.
-  - (* TSel *)
-    split; destruct n; intuition; unfold vseta_sub_eq in *; unfold vset_sub_eq; intros;
-      unfold_val_type in H0; unfold_val_type; destruct (indexr x ρ) eqn:Hlookup1.
-    1,3 : apply PeanoNat.Nat.lt_neq in H3; rewrite <- PeanoNat.Nat.eqb_neq in H3.
-    rewrite H3. 2: rewrite H3 in H0. 1,2 : auto. intuition.
-    apply indexr_var_some in H3. destruct H3. rewrite H1 in Hlookup1. discriminate.
-  - (* TMem *)
-    split; destruct n; intuition; unfold vseta_sub_eq in *; unfold vset_sub_eq in *; intros; unfold_val_type in H0;
-      destruct v as [ γ' T' t | γ' T' ]; eauto; unfold_val_type; destruct n; intuition.
-    all : specialize ((proj1 (IHT _ RMem1 _ H4 D)) (S n)) as IH1; simpl in IH1.
-    all : specialize ((proj2 (IHT _ RMem1 _ H4 D)) (S n)) as IH1'; simpl in IH1'.
-    all : specialize ((proj1 (IHT _ RMem2 _ H5 D)) (S n)) as IH2; simpl in IH2.
-    all : specialize ((proj2 (IHT _ RMem2 _ H5 D)) (S n)) as IH2'; simpl in IH2'.
-    all : eapply subset'_trans; eauto.
-  - (* TBind *)
-    split; destruct n; intuition; unfold_val_type; intros; destruct H0 as [X [Xnvs' vvs'TX]]; exists X; intuition.
-    specialize (@val_type_splice (open' ρ T) [X] ρ) as HT; simpl in HT.
-    2: specialize (@val_type_unsplice (open' ρ T) [X] ρ) as HT; simpl in HT.
-    replace (open' (D :: ρ) T) with (splice (length ρ) (open' ρ T)).
-    3 : replace (open' (D :: ρ) T) with (splice (length ρ) (open' ρ T)) in vvs'TX.
-    2,4: eapply splice_open_succ'; eauto. all : unfold vseta_sub_eq in HT.
-    all : specialize HT with (D := D) (n := (S n)). all : apply HT; auto.
-    all : eapply closed_ty_open; eauto; eapply closed_ty_monotone; eauto; lia; lia; lia.
-  - (* TAnd *)
-    split; destruct n; intuition; simpl; intros; unfold_val_type in H0; unfold_val_type; intuition;
-      specialize (proj1 (IHT _ RAnd1 ρ H4 D) (S n)) as IH1;
-      specialize (proj2 (IHT _ RAnd1 ρ H4 D) (S n)) as IH1';
-      specialize (proj1 (IHT _ RAnd2 ρ H5 D) (S n)) as IH2;
-      specialize (proj2 (IHT _ RAnd2 ρ H5 D) (S n)) as IH2'; auto.
+  intros. specialize (@val_type_splice' T [] ρ) with (D := D) as Hsp.
+  simpl in Hsp. erewrite splice_id in Hsp; eauto.
 Qed.
 
 Lemma val_type_extend  : forall {T ρ D}, closed_ty 0 (length ρ) T -> val_type T ρ ⊑ val_type T (D :: ρ).
