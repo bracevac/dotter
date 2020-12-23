@@ -633,7 +633,7 @@ Fixpoint eval(fuel : nat)(γ : venv)(t : tm){struct fuel}: Result :=
       end
     | tunpack t1 t2 =>
       match eval n γ t1 with
-      | Done v1 => eval n (v1 :: γ) t2
+      | Done v1 => eval n (v1 :: γ) (open_tm' γ t2)
       | err => err
       end
     | _ => Error
@@ -928,7 +928,7 @@ Definition val_type_naked (T : ty) : (forall T', R T' T -> denv -> Dom) -> denv 
 
   | TBind T       => fun val_type ρ =>
                       (* ⨆{{ X | X ⊑ (val_type (open' ρ T) RBind (X :: ρ)) }} *)
-                      {{ v D n | exists X, X n = D /\ (val_type (open' ρ T) RBind (X :: ρ) (S n) D v) }}
+                       {{ v D n | (exists X, X n = D /\ forall k, val_type (open' ρ T) RBind (X :: ρ) (S k) (X k) v) }}
 
   | TAnd T1 T2    => fun val_type ρ =>
                       (val_type T1 RAnd1 ρ) ⊓ (val_type T2 RAnd2 ρ)
@@ -1034,7 +1034,7 @@ Lemma val_type_splice': forall {T ρ ρ'},
           specialize (IHT _ (@RBind _ _ (ρ ++ ρ')) _ _ (HclT X) D); simpl in IHT.
     replace (open' (ρ ++ D :: ρ') (splice (length ρ') T)) with (splice (length ρ') (open' (ρ ++ ρ') T)).
     3: replace (open' (ρ ++ D :: ρ') (splice (length ρ') T)) with (splice (length ρ') (open' (ρ ++ ρ') T)) in vvs'TX.
-    2, 4: apply splice_open'. all : intuition. apply (H0 (S n)). auto. apply (H1 (S n)). auto.
+    2, 4: apply splice_open'. all : intuition. apply (H0 (S k)). auto. apply (H1 (S k)). auto.
   - (* TAnd *)
     inversion H. subst. specialize (IHT _ RAnd1 _ _ H4 D) as IHT1. specialize (IHT _ RAnd2 _ _ H5 D).
     intuition; unfold vseta_sub_eq in *; intros n; destruct n; intuition; simpl; intros vs' v HD;
@@ -1153,7 +1153,7 @@ Lemma val_type_rewire' : forall {T b ρ' ρ},
     all: specialize (IHT _ (@RBind _ _ (ρ' ++ ρ)) (S b) (X :: ρ') ρ) with (x := x) (D := D) (j := (S j)).
     all : unfold open' in IHT; edestruct IHT as [IHU IHD]; auto.
     1,4 : eapply closed_ty_open_succ; eauto.
-    1,3 : lia. apply (IHU (S n)). auto. apply (IHD (S n)). auto.
+    1,3 : lia. apply (IHU (S k)). auto. apply (IHD (S k)). auto.
   - (* TAnd *)
     split; destruct n; intuition; simpl; intros; unfold_val_type in H2; unfold_val_type; intuition;
       specialize (proj1 (IHT _ RAnd1 _ _ _ H6 _ D H0 _ H1) (S n)) as IH1;
@@ -1179,6 +1179,12 @@ Inductive 𝒞𝓉𝓍 : tenv -> denv -> venv -> Prop :=
     closed_ty 0 (length Γ) T ->
     ⦑ v, D ⦒ ⋵ (val_type T ρ) ->
     𝒞𝓉𝓍 (T :: Γ) (D :: ρ) (v :: γ)
+| 𝒞𝓉𝓍_cons_rec : forall {Γ ρ γ T T' v D},
+    𝒞𝓉𝓍 Γ ρ γ  ->
+    closed_ty 1 (length Γ) T ->
+    T' = open' Γ T ->
+    ⦑ v, D ⦒ ⋵ (val_type T' (D :: ρ)) ->
+    𝒞𝓉𝓍 (T' :: Γ) (D :: ρ) (v :: γ)
 .
 Hint Constructors 𝒞𝓉𝓍 : dsub.
 
@@ -1247,6 +1253,21 @@ Lemma lookup {Γ ρ γ} (C : 𝒞𝓉𝓍 Γ ρ γ) : forall {x}, x < length Γ 
       apply val_type_extend_mem. rewrite (𝒞𝓉𝓍_lengthρ C) in H.
       rewrite (𝒞𝓉𝓍_lengthρ C) in l_T_closed0. auto. auto.
       simpl. eapply closed_ty_monotone; eauto.
+  - inversion H2.
+    + constructor. econstructor. simpl. lia.
+      apply indexr_head.
+      rewrite (𝒞𝓉𝓍_lengthρ C). apply indexr_head.
+      rewrite (𝒞𝓉𝓍_lengthγ C). apply indexr_head.
+      auto. subst. unfold open'. eapply closed_ty_open; eauto.
+      simpl. eapply closed_ty_monotone; eauto.
+    + apply IHC in H4. inversion H4. destruct X.
+      constructor. econstructor. simpl. lia.
+      rewrite indexr_skip. eauto. lia.
+      rewrite indexr_skip. eauto. rewrite <- (𝒞𝓉𝓍_lengthρ C). lia.
+      rewrite indexr_skip. eauto. rewrite <- (𝒞𝓉𝓍_lengthγ C). lia.
+      apply val_type_extend_mem. rewrite (𝒞𝓉𝓍_lengthρ C) in H.
+      rewrite (𝒞𝓉𝓍_lengthρ C) in l_T_closed0. auto. auto.
+      simpl. eapply closed_ty_monotone; eauto.
 Qed.
 
 Lemma invert_var : forall {Γ x T}, has_type Γ (tvar (varF x)) T ->
@@ -1265,9 +1286,9 @@ Lemma invert_var : forall {Γ x T}, has_type Γ (tvar (varF x)) T ->
     exists v. exists D. intuition. unfold_val_type.
     unfold vseta_mem in *. intros n. exists D. intuition.
     apply ty_wf_closed in H. inversion H. subst.
-    specialize (vDTx n). rewrite (𝒞𝓉𝓍_lengthρ HC) in H3.
+    rewrite (𝒞𝓉𝓍_lengthρ HC) in H3.
     destruct (val_type_rewire H3 rD) as [HU _].
-    unfold open'. unfold vseta_sub_eq in HU. apply (HU (S n)). auto.
+    unfold open'. unfold vseta_sub_eq in HU. apply (HU (S k)). auto.
   - specialize (IHHT H0 HC). destruct IHHT as [v [D [gv [rD vDT1]]]].
     exists v. exists D. intuition. specialize (fstp _ _ _ H _ _ HC).
     unfold vseta_mem in *. unfold vseta_sub_eq in fstp.
@@ -1379,20 +1400,24 @@ Proof.
       destruct HT as [v [vs [xgv [xrvs vvsinVtyTx ]]]].
       exists 1. exists v. split. simpl. rewrite xgv. reflexivity.
       exists vs.  unfold_val_type. unfold vseta_mem in *. intros.
-      exists vs. intuition.  specialize (vvsinVtyTx n).
+      exists vs. intuition.  specialize (vvsinVtyTx k).
       apply ty_wf_closed in H. inversion H. subst.
       rewrite (𝒞𝓉𝓍_lengthρ HΓργ) in H3. destruct (val_type_rewire H3 xrvs) as [HU _].
-      unfold vseta_sub_eq in HU. apply (HU (S n)). auto.
+      unfold vseta_sub_eq in HU. apply (HU (S k)). auto.
     + (* t_unpack *)
       simpl in IHHty1. simpl in IHHty2.
       specialize (IHHty1 _ _ HΓργ). destruct IHHty1 as [k1 [v1 [evalv1 [vs1 v1vs1inVtyT1T2 ]]]].
-      edestruct IHHty2. constructor; eauto. subst. apply has_type_closed in Hty1.
-      destruct Hty1. inversion c0. subst. admit. (* TODO problem *)
-      unfold vseta_mem in *. unfold_val_type in v1vs1inVtyT1T2.
-      intros. specialize (v1vs1inVtyT1T2 n). destruct v1vs1inVtyT1T2 as [X [Xvs1 vtyT1]].
-      unfold open' in *. rewrite (𝒞𝓉𝓍_lengthρ HΓργ) in H. rewrite <- H in vtyT1.
-      admit. (* TODO *)
-      admit.
+      unfold_val_type in v1vs1inVtyT1T2. unfold vseta_mem in *.
+      destruct (v1vs1inVtyT1T2 0) as [X [Xnvs1n vtT1]]. edestruct IHHty2.
+      eapply 𝒞𝓉𝓍_cons_rec; eauto. apply has_type_closed in Hty1. destruct Hty1.
+      inversion c0. subst. auto.
+      unfold vseta_mem in *. subst. unfold open' in *. rewrite (𝒞𝓉𝓍_lengthρ HΓργ). eapply vtT1.
+      destruct H1 as [v2 [evalv2 [vs vtpT2X ] ]]. exists (k1 + x + 1). exists v2.
+      split. destruct k1; destruct x; try solve [ simpl in *; discriminate].
+      eapply eval_monotone in evalv1. eapply eval_monotone in evalv2.
+      simpl. erewrite evalv1. unfold open_tm' in *. rewrite (𝒞𝓉𝓍_lengthγ HΓργ) in evalv2.
+      erewrite evalv2. auto. lia. lia. exists vs. intros. eapply val_type_shrink'.
+      rewrite <- (𝒞𝓉𝓍_lengthρ HΓργ). apply ty_wf_closed. auto. apply vtpT2X.
     + (* t_sub *)
       specialize (IHHty _ _ HΓργ).
       destruct IHHty as [k [v [Heval [vs vinVtyT1] ]]].
@@ -1467,11 +1492,9 @@ Proof.
         unfold open'. rewrite (𝒞𝓉𝓍_lengthρ HΓργ). auto.
       }
       rewrite HOT1 in *. rewrite HOT2 in *.
-      unfold vseta_sub_eq in IHHst. specialize IHHst with (n := (S n)).
-      eapply IHHst; eauto. constructor; eauto.
-      admit. (* TODO problem *)
-      unfold vseta_mem. intros.
-      admit.
+      unfold vseta_sub_eq in IHHst. specialize IHHst with (n := (S k)).
+      eapply IHHst; eauto. eapply 𝒞𝓉𝓍_cons_rec; eauto.
+      apply ty_wf_closed in H1. inversion H1. auto.
     + (* stp_and11 *)
       specialize (IHHst _ _ HΓργ (S n)).
       unfold_val_type in H0. intuition.
