@@ -1291,33 +1291,24 @@ Lemma invert_var : forall {Γ x T}, has_type Γ (tvar (varF x)) T ->
     exists v. exists D. intuition. specialize (fstp _ _ _ H _ _ HC).
     unfold vseta_mem in *. unfold vseta_sub_eq in fstp.
     intros n. specialize (fstp (S n)). apply fstp. auto.
-Qed. (* TODO: it might be necessary to make this Defined for the main proof*)
+Defined. (*  It is necessary to make this Defined, since we call it in the main proof and Coq
+won't be able to check termination otherwise *)
 
-(* Fixpoint *)
-(*   fundamental {Γ : tenv } {t : tm} {T : ty} *)
-(*                    (HT: has_type Γ t T) : forall {ρ : denv} {γ : venv} (HΓργ : 𝒞𝓉𝓍 Γ ρ γ), ⟨ γ , t ⟩ ∈ ℰ (val_type T ρ) *)
-(* with *)
-(*   fundamental_stp {Γ : tenv } {S T : ty} *)
-(*                    (ST: stp Γ S T)      : forall {ρ : denv} {γ : venv} (HΓργ : 𝒞𝓉𝓍 Γ ρ γ), (val_type S ρ) ⊑ (val_type T ρ). *)
+Fixpoint
+  fundamental {Γ : tenv } {t : tm} {T : ty}
+                   (HT: has_type Γ t T) : forall {ρ : denv} {γ : venv} (HΓργ : 𝒞𝓉𝓍 Γ ρ γ), ⟨ γ , t ⟩ ∈ ℰ (val_type T ρ)
+with
+  fundamental_stp {Γ : tenv } {S T : ty}
+                   (ST: stp Γ S T)      : forall {ρ : denv} {γ : venv} (HΓργ : 𝒞𝓉𝓍 Γ ρ γ), (val_type S ρ) ⊑ (val_type T ρ).
 
-(*   - destruct HT eqn:HTeq; intros; unfold ℰ in *; unfold elem2 in *. *)
-(*     + (* t_var *) *)
-(*       pose (HL := e). apply indexr_var_some' in HL. apply (lookup HΓργ) in HL. inversion HL as [L]. *)
-(*       exists 1. exists (l_v L). split. simpl. rewrite (l_x_γ_v L). auto. *)
-(*       exists (l_D L). pose (H0 := e). rewrite (l_x_Γ_T L) in H0. inversion H0. subst. apply (l_vD_in_Tρ L). *)
-
-Lemma fundamental     : (forall {Γ t T}, has_type Γ t T -> forall{ρ γ}, 𝒞𝓉𝓍 Γ ρ γ -> ⟨ γ , t ⟩ ∈ ℰ (val_type T ρ))
-with  fundamental_stp : (forall {Γ S T}, stp Γ S T      -> forall{ρ γ}, 𝒞𝓉𝓍 Γ ρ γ -> (val_type S ρ) ⊑ (val_type T ρ)).
-Proof.
-  - clear fundamental. intros Γ t T Hty. induction Hty; intros ρ γ HΓργ; unfold ℰ in *; unfold elem2 in *.
+  - destruct HT eqn:HTeq; intros; unfold ℰ in *; unfold elem2 in *.
     + (* t_var *)
-      pose (HL := H0). apply indexr_var_some' in HL. apply (lookup HΓργ) in HL. inversion HL as [L].
+      pose (HL := e). apply indexr_var_some' in HL. apply (lookup HΓργ) in HL. inversion HL as [L].
       exists 1. exists (l_v L). split. simpl. rewrite (l_x_γ_v L). auto.
-      exists (l_D L). rewrite (l_x_Γ_T L) in H0. inversion H0. subst. apply (l_vD_in_Tρ L).
+      exists (l_D L). pose (H0 := e). rewrite (l_x_Γ_T L) in H0. inversion H0. subst. apply (l_vD_in_Tρ L).
     + (* t_typ *)
       exists 1. exists (vty γ T). split. simpl. auto. exists (val_type T ρ). unfold vseta_mem.
-      intros. simpl. unfold_val_type. repeat split.
-      apply seteq'_refl. apply seteq'_refl.
+      intros. simpl. unfold_val_type. repeat split. apply seteq'_refl. apply seteq'_refl.
     + (* t_abs *)
       exists 1. exists (vabs γ T1 t). split. simpl. reflexivity.
       exists vseta_top. unfold vseta_mem. unfold_val_type. unfold vseta_mem. intros n.
@@ -1325,16 +1316,16 @@ Proof.
       unfold ℰ in *; unfold elem2 in *.
       assert (HOt : (open_tm' γ t) = (open_tm' Γ t)). {
         apply 𝒞𝓉𝓍_length in HΓργ. unfold open_tm'. destruct HΓργ.
-        rewrite H0. rewrite H1. auto.
+        rewrite H. rewrite H0. auto.
       }
       assert (HOT2 : (open' ρ T2) = (open' Γ T2)). {
         apply 𝒞𝓉𝓍_length in HΓργ. unfold open'. destruct HΓργ.
-        rewrite H0. rewrite H1. auto.
+        rewrite H. rewrite H0. auto.
       }
-      rewrite HOt. rewrite HOT2. apply IHHty.
-      constructor; intuition.
-      apply ty_wf_closed in H. auto.
+      rewrite HOt. rewrite HOT2. apply (fundamental _ _ _ h).
+      constructor; intuition. pose (Hwf := t0). apply ty_wf_closed in Hwf. auto.
     + (* t_app *)
+      pose (IHHty1 := fundamental _ _ _ h1). pose (IHHty2 := fundamental _ _ _ h2).
       unfold vseta_mem in *. simpl in IHHty1. simpl in IHHty2.
       specialize (IHHty1 _ _ HΓργ). specialize (IHHty2 _ _ HΓργ).
       destruct IHHty1 as [k1 [v1 [evalv1 [vs1 v1vs1inVtyT1T2 ]]]].
@@ -1350,17 +1341,18 @@ Proof.
       simpl. erewrite evalv2. simpl. erewrite evalv1. erewrite evalapp.
       reflexivity. lia. lia. lia. exists vs3. simpl.
       assert (HT2open' : (open' ρ T2) = T2). {
-        unfold open'. apply ty_wf_closed in H. eapply closed_ty_open_id; eauto.
+        unfold open'. pose (H := ty_wf_closed t). eapply closed_ty_open_id; eauto.
       }
       rewrite HT2open' in *. unfold vseta_mem in *.
       intros n. eapply val_type_shrink'.
       rewrite <- (𝒞𝓉𝓍_lengthρ HΓργ). eapply ty_wf_closed. auto.
       eauto. contradiction.
     + (* t_dapp *)
-      unfold vseta_mem in *. simpl in IHHty1. clear IHHty2.
+      pose (IHHty1 := fundamental _ _ _ h1).
+      unfold vseta_mem in *. simpl in IHHty1.
       specialize (IHHty1 _ _ HΓργ).
       destruct IHHty1 as [k1 [v1 [evalv1 [vs1 v1vs1inVtyT1T2 ]]]].
-      destruct (@invert_var _ _ _ Hty2 fundamental_stp _ _ HΓργ) as [v2 [vs2 [xgv2 [xrvs2 v2vs2inVtyT1]]]].
+      destruct (@invert_var _ _ _ h2 fundamental_stp _ _ HΓργ) as [v2 [vs2 [xgv2 [xrvs2 v2vs2inVtyT1]]]].
       assert (evalv2 : eval 1 γ (tvar (varF x)) = Done v2). {
         simpl. rewrite xgv2. auto.
       }
@@ -1375,17 +1367,18 @@ Proof.
       simpl. erewrite evalv2. erewrite evalv1. erewrite evalapp.
       reflexivity. lia. lia. lia. exists vs3. simpl. unfold vseta_mem in *. simpl in *.
       intros n. specialize (v3vs3inVtyT2 n).
-      apply has_type_closed in Hty1. destruct Hty1. inversion c0. subst.
+      pose (Hty1 := has_type_closed h1). destruct Hty1. inversion c0. subst.
       rewrite (𝒞𝓉𝓍_lengthρ HΓργ) in H4. destruct (val_type_rewire H4 xrvs2) as [_ HD].
       unfold vseta_sub_eq in HD. apply (HD (S n)). auto.
       contradiction.
     + (* t_and *)
-      specialize (IHHty1 _ _ HΓργ). specialize (IHHty2 _ _ HΓργ).
+      pose (IHHty1 := fundamental _ _ _ h1 _ _ HΓργ).
+      pose (IHHty2 := fundamental _ _ _ h2 _ _ HΓργ).
       destruct IHHty1 as [k [v [evalx [D vDT1 ]]]].
       destruct IHHty2 as [k' [v' [evalx' [D' vDT2 ]]]].
       unfold_val_type. exists k. exists v. intuition.
-      specialize (invert_var Hty1 fundamental_stp HΓργ) as HT1.
-      specialize (invert_var Hty2 fundamental_stp HΓργ) as HT2.
+      specialize (invert_var h1 fundamental_stp HΓργ) as HT1.
+      specialize (invert_var h2 fundamental_stp HΓργ) as HT2.
       destruct HT1 as [v'' [D'' [gv'' [rD'' v''D''T1 ]]]].
       destruct HT2 as [v''' [D''' [gv''' [rD''' v'''D'''T2 ]]]].
       rewrite rD'' in *. inversion rD'''. subst.
@@ -1394,95 +1387,99 @@ Proof.
       rewrite gv'' in evalx. inversion evalx. subst.
       exists D'''. unfold vseta_mem in *. simpl. intuition.
     + (* t_var_pack *)
-      specialize (invert_var Hty fundamental_stp HΓργ) as HT.
-      destruct HT as [v [vs [xgv [xrvs vvsinVtyTx ]]]].
+      specialize (invert_var h fundamental_stp HΓργ) as HTx.
+      destruct HTx as [v [vs [xgv [xrvs vvsinVtyTx ]]]].
       exists 1. exists v. split. simpl. rewrite xgv. reflexivity.
       exists vs.  unfold_val_type. unfold vseta_mem in *. intros.
       exists vs. intuition.  specialize (vvsinVtyTx k).
-      apply ty_wf_closed in H. inversion H. subst.
+      pose (H:= ty_wf_closed t). inversion H. subst.
       rewrite (𝒞𝓉𝓍_lengthρ HΓργ) in H3. destruct (val_type_rewire H3 xrvs) as [HU _].
       unfold vseta_sub_eq in HU. apply (HU (S k)). auto.
     + (* t_unpack *)
+      pose (IHHty1 := fundamental _ _ _ h1). pose (IHHty2 := fundamental _ _ _ h2).
       simpl in IHHty1. simpl in IHHty2.
       specialize (IHHty1 _ _ HΓργ). destruct IHHty1 as [k1 [v1 [evalv1 [vs1 v1vs1inVtyT1T2 ]]]].
       unfold_val_type in v1vs1inVtyT1T2. unfold vseta_mem in *.
       destruct (v1vs1inVtyT1T2 0) as [X [Xnvs1n vtT1]]. edestruct IHHty2.
-      eapply 𝒞𝓉𝓍_cons_rec; eauto. apply has_type_closed in Hty1. destruct Hty1.
+      eapply 𝒞𝓉𝓍_cons_rec; eauto. pose (Hty1 := has_type_closed h1). destruct Hty1.
       inversion c0. subst. auto.
       unfold vseta_mem in *. subst. unfold open' in *. rewrite (𝒞𝓉𝓍_lengthρ HΓργ). eapply vtT1.
-      destruct H1 as [v2 [evalv2 [vs vtpT2X ] ]]. exists (k1 + x + 1). exists v2.
+      destruct H as [v2 [evalv2 [vs vtpT2X ] ]]. exists (k1 + x + 1). exists v2.
       split. destruct k1; destruct x; try solve [ simpl in *; discriminate].
       eapply eval_monotone in evalv1. eapply eval_monotone in evalv2.
       simpl. erewrite evalv1. unfold open_tm' in *. rewrite (𝒞𝓉𝓍_lengthγ HΓργ) in evalv2.
       erewrite evalv2. auto. lia. lia. exists vs. intros. eapply val_type_shrink'.
       rewrite <- (𝒞𝓉𝓍_lengthρ HΓργ). apply ty_wf_closed. auto. apply vtpT2X.
     + (* t_sub *)
-      specialize (IHHty _ _ HΓργ).
+      pose (IHHty := fundamental _ _ _ h _ _ HΓργ).
       destruct IHHty as [k [v [Heval [vs vinVtyT1] ]]].
       exists k. exists v. split. assumption. exists vs.
       unfold vseta_mem in *. intros. specialize (vinVtyT1 n).
-      specialize (fundamental_stp _ _ _ H _ _ HΓργ).
+      specialize (fundamental_stp _ _ _ s _ _ HΓργ).
       unfold vseta_sub_eq in fundamental_stp. specialize (fundamental_stp (S n)).
       eauto.
   (* Subtyping *)
-  - clear fundamental_stp. intros Γ S T Hst.
-    induction Hst; intros ρ γ HΓργ; unfold vseta_sub_eq; intros; unfold vset_sub_eq; destruct n; intros; trivial.
+  - destruct ST eqn:Hst; intros ρ γ HΓργ; unfold vseta_sub_eq; intros; unfold vset_sub_eq; destruct n; intros; trivial.
     + (* stp_top *)
       unfold_val_type. trivial.
     + (* stp_bot *)
-      destruct H0.
+      destruct H.
     + (* stp_mem *)
       unfold_val_type in H. destruct v as [ γ' T t | γ' T ]. contradiction.
-      specialize (IHHst1 _ _ HΓργ n). specialize (IHHst2 _ _ HΓργ n).
+      pose (IHHst1 := fundamental_stp _ _ _ s1 _ _ HΓργ n).
+      pose (IHHst2 := fundamental_stp _ _ _ s2 _ _ HΓργ n).
       destruct H as [S1subX XsubT1]. unfold_val_type. repeat split.
       all : eapply subset'_trans; eauto; assumption.
     + (* stp_sel1 *)
-      specialize (IHHst _ _ HΓργ). pose (HL := H). apply indexr_var_some' in HL.
+      pose (IHHst := fundamental_stp _ _ _ s _ _ HΓργ).
+      pose (HL := e). apply indexr_var_some' in HL.
       apply (lookup HΓργ) in HL. inversion HL as [L]. destruct L.
-      rewrite l_x_Γ_T0 in H. inversion H. subst.
+      pose (Hx := e). rewrite l_x_Γ_T0 in Hx. inversion Hx. subst.
       unfold vseta_mem in *. simpl in *. unfold vseta_sub_eq in IHHst.
       specialize (IHHst (S (S n))). unfold vset_sub_eq in IHHst.
       specialize (l_vD_in_Tρ0 (S n)). apply IHHst in l_vD_in_Tρ0.
       unfold_val_type in l_vD_in_Tρ0. destruct l_v0 as [ γ' T' t | γ' T' ]. contradiction.
       unfold_val_type. rewrite l_x_ρ_D0. intuition.
     + (* stp_sel2 *)
-      specialize (IHHst _ _ HΓργ). pose (HL := H). apply indexr_var_some' in HL.
+      pose (IHHst := fundamental_stp _ _ _ s _ _ HΓργ).
+      pose (HL := e). apply indexr_var_some' in HL.
       apply (lookup HΓργ) in HL. inversion HL as [L]. destruct L.
-      rewrite l_x_Γ_T0 in H. inversion H. subst.
+      pose (Hx := e). rewrite l_x_Γ_T0 in Hx. inversion Hx. subst.
       unfold vseta_mem in *. simpl in *. unfold vseta_sub_eq in IHHst.
       specialize (IHHst (S (S n))). unfold vset_sub_eq in IHHst.
       specialize (l_vD_in_Tρ0 (S n)). apply IHHst in l_vD_in_Tρ0.
       unfold_val_type in l_vD_in_Tρ0. destruct l_v0 as [ γ' T' t | γ' T' ]. contradiction.
-      unfold_val_type in H0. rewrite l_x_ρ_D0 in H0. intuition.
+      unfold_val_type in H. rewrite l_x_ρ_D0 in H. intuition.
     + (* stp_all *)
-      unfold_val_type in H1. destruct v as [γ' T' t | γ' T'] eqn:Hv; try contradiction.
+      unfold_val_type in H. destruct v as [γ' T' t' | γ' T'] eqn:Hv; try contradiction.
       unfold_val_type. unfold ℰ in *. unfold elem2 in *. repeat split.
-      intros vx Dx vxMem. specialize (IHHst1 _ _ HΓργ).
+      intros vx Dx vxMem. pose (IHHst1 := fundamental_stp _ _ _ s1 _ _ HΓργ).
       assert (HvsDxS1 : vseta_mem vx Dx (val_type S1 ρ)). {
         unfold vseta_mem in *.
         intros m. specialize (IHHst1 (S m)).
         intuition.
       }
-      eapply H1 in HvsDxS1. destruct HvsDxS1 as [k [vy [Heval [Dy vyinT1]]]].
+      eapply H in HvsDxS1. destruct HvsDxS1 as [k [vy [Heval [Dy vyinT1]]]].
       exists k. exists vy. split. assumption.
       assert (Hopen1 : (open' Γ T1) = (open' ρ T1)). {
-        apply 𝒞𝓉𝓍_lengthρ in HΓργ. unfold open'. rewrite HΓργ. auto.
+        pose (HR := 𝒞𝓉𝓍_lengthρ HΓργ). unfold open'. rewrite HR. auto.
       }
       assert (Hopen2 : (open' Γ T2) = (open' ρ T2)). {
-        apply 𝒞𝓉𝓍_lengthρ in HΓργ. unfold open'. rewrite HΓργ. auto.
+        pose (HR := 𝒞𝓉𝓍_lengthρ HΓργ). unfold open'. rewrite HR. auto.
       }
       rewrite <- Hopen2. exists Dy.
       unfold vseta_mem. intros m. simpl.
-      unfold vseta_sub_eq in IHHst2.
+      pose (IHHst2 := fundamental_stp _ _ _ s2). unfold vseta_sub_eq in IHHst2.
       assert (HC: 𝒞𝓉𝓍 (S2 :: Γ) (Dx :: ρ) (vx :: γ)). {
-        constructor; intuition. inversion H0.
-        apply ty_wf_closed in H5. auto.
+        apply 𝒞𝓉𝓍_cons; intuition. pose (HS2 := t0). inversion HS2.
+        apply ty_wf_closed in H3. auto.
       }
       specialize (IHHst2 _ _ HC (S m)).
       apply IHHst2. rewrite Hopen1. intuition.
     + (* stp_bindx *)
-      subst. unfold_val_type in H3. unfold_val_type.
-      destruct H3 as [X [Xvs' XT1]]. exists X. intuition.
+      pose (IHHst := fundamental_stp _ _ _ s).
+      subst. unfold_val_type in H. unfold_val_type.
+      destruct H as [X [Xvs' XT1]]. exists X. intuition.
       assert (HOT1 : (open' ρ T1) = (open' Γ T1)). {
         unfold open'. rewrite (𝒞𝓉𝓍_lengthρ HΓργ). auto.
       }
@@ -1492,21 +1489,22 @@ Proof.
       rewrite HOT1 in *. rewrite HOT2 in *.
       unfold vseta_sub_eq in IHHst. specialize IHHst with (n := (S k)).
       eapply IHHst; eauto. eapply 𝒞𝓉𝓍_cons_rec; eauto.
-      apply ty_wf_closed in H1. inversion H1. auto.
+      pose (H1 := ty_wf_closed t). inversion H1. auto.
     + (* stp_and11 *)
-      specialize (IHHst _ _ HΓργ (S n)).
-      unfold_val_type in H0. intuition.
+      pose (IHHst := fundamental_stp _ _ _ s _ _ HΓργ (S n)).
+      unfold_val_type in H. intuition.
     + (* stp_and12 *)
-      specialize (IHHst _ _ HΓργ (S n)).
-      unfold_val_type in H0. intuition.
+      pose (IHHst := fundamental_stp _ _ _ s _ _ HΓργ (S n)).
+      unfold_val_type in H. intuition.
     + (* stp_and2 *)
-      specialize (IHHst1 _ _ HΓργ (S n)). specialize (IHHst2 _ _ HΓργ (S n)).
+      pose (IHHst1 := fundamental_stp _ _ _ s1 _ _ HΓργ (S n)).
+      pose (IHHst2 := fundamental_stp _ _ _ s2 _ _ HΓργ (S n)).
       unfold_val_type. intuition.
     + (* stp_trans *)
-      unfold vseta_sub_eq in *.
-      specialize (IHHst1 _ _ HΓργ (Datatypes.S n)). specialize (IHHst2 _ _ HΓργ (Datatypes.S n)).
-      intuition.
-Admitted.
+      pose (IHHst1 := fundamental_stp _ _ _ s1 _ _ HΓργ (Datatypes.S n)).
+      pose (IHHst2 := fundamental_stp _ _ _ s2 _ _ HΓργ (Datatypes.S n)).
+      unfold vseta_sub_eq in *. intuition.
+Qed.
 
 Lemma escape : forall {t T γ ρ}, ⟨ γ , t ⟩ ∈ ℰ (val_type T ρ) -> exists k v, eval k γ t = Done v.
 Proof.
