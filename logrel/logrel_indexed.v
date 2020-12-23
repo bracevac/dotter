@@ -19,8 +19,6 @@ Import ListNotations.
 
   TODOs :
 
-  - Construction of context relations and assms in fundamental lemma is fishy w.r.t.
-    TBind (already in ECOOP version!)
   - TBind as general fixpoint on the domain, to prepare for richer recursive types.
 
   Compatible with Coq 8.12.1.
