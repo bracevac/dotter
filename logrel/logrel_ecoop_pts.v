@@ -1113,13 +1113,11 @@ Inductive 𝒞𝓉𝓍 : tenv -> denv -> venv -> Prop :=
 | 𝒞𝓉𝓍_cons : forall {Γ ρ γ T v D},
     𝒞𝓉𝓍 Γ ρ γ  ->
     closed 0 (length Γ) T ->
-    type T ->
     ⦑ v, D ⦒ ⋵ (val_type T ρ) ->
     𝒞𝓉𝓍 (T :: Γ) (D :: ρ) (v :: γ)
 | 𝒞𝓉𝓍_cons_rec : forall {Γ ρ γ T T' v D},
     𝒞𝓉𝓍 Γ ρ γ  ->
     closed 1 (length Γ) T ->
-    type T ->
     T' = open' Γ T ->
     ⦑ v, D ⦒ ⋵ (val_type T' (D :: ρ)) ->
     𝒞𝓉𝓍 (T' :: Γ) (D :: ρ) (v :: γ)
@@ -1152,7 +1150,6 @@ Record LookupT (x : id) (Γ : tenv) (ρ : denv) (γ : venv) : Type :=
       (* l_𝒞𝓉𝓍      : 𝒞𝓉𝓍 (l_T :: l_Γ2) (l_D :: l_ρ2) (l_v :: l_γ2); *)
       l_vD_in_Tρ : ⦑ l_v, l_D ⦒ ⋵ (val_type l_T ρ);
       l_T_closed : closed 0 (length Γ) l_T;
-      l_T_type   : type l_T;
       (* l_Γ_split  : Γ = l_Γ1 ++ (l_T :: l_Γ2); *)
       (* l_ρ_split  : ρ = l_ρ1 ++ (l_D :: l_ρ2); *)
       (* l_γ_split  : γ = l_γ1 ++ (l_v :: l_γ2); *)
@@ -1167,7 +1164,6 @@ Arguments l_x_γ_v    {x Γ ρ γ}.
 Arguments l_vD_in_Tρ {x Γ ρ γ}.
 Arguments l_x_in_Dom {x Γ ρ γ}.
 Arguments l_T_closed {x Γ ρ γ}.
-Arguments l_T_type   {x Γ ρ γ}.
 
 (* Enables doing induction on C in the lookup lemma *)
 Inductive Lookup (x : id) Γ ρ γ : Prop :=
@@ -1176,15 +1172,15 @@ Inductive Lookup (x : id) Γ ρ γ : Prop :=
 Lemma lookup {Γ ρ γ} (C : 𝒞𝓉𝓍 Γ ρ γ) : forall {x}, x < length Γ -> Lookup x Γ ρ γ.
   induction C; simpl; intros.
   - lia.
-  - inversion H2.
+  - inversion H1.
     + constructor. econstructor.
       simpl. lia.
       apply indexr_head.
       rewrite (𝒞𝓉𝓍_lengthρ C). apply indexr_head.
       rewrite (𝒞𝓉𝓍_lengthγ C). apply indexr_head.
       apply val_type_extend_mem. rewrite (𝒞𝓉𝓍_lengthρ C) in H. auto. auto.
-      simpl. eapply closed_monotone; eauto. auto.
-    + apply IHC in H4. inversion H4. destruct X.
+      simpl. eapply closed_monotone; eauto.
+    + apply IHC in H3. inversion H3. destruct X.
       constructor. econstructor.
       simpl. lia.
       rewrite indexr_skip. eauto. lia.
@@ -1192,22 +1188,22 @@ Lemma lookup {Γ ρ γ} (C : 𝒞𝓉𝓍 Γ ρ γ) : forall {x}, x < length Γ 
       rewrite indexr_skip. eauto. rewrite <- (𝒞𝓉𝓍_lengthγ C). lia.
       apply val_type_extend_mem. rewrite (𝒞𝓉𝓍_lengthρ C) in H.
       rewrite (𝒞𝓉𝓍_lengthρ C) in l_T_closed0. auto. auto.
-      simpl. eapply closed_monotone; eauto. auto.
-  - inversion H3.
+      simpl. eapply closed_monotone; eauto.
+  - inversion H2.
     + constructor. econstructor. simpl. lia.
       apply indexr_head.
       rewrite (𝒞𝓉𝓍_lengthρ C). apply indexr_head.
       rewrite (𝒞𝓉𝓍_lengthγ C). apply indexr_head.
       auto. subst. unfold open'. eapply closed_open; eauto.
-      simpl. eapply closed_monotone; eauto. subst. unfold open'. apply open_type. auto.
-    + apply IHC in H5. inversion H5. destruct X.
+      simpl. eapply closed_monotone; eauto.
+    + apply IHC in H4. inversion H4. destruct X.
       constructor. econstructor. simpl. lia.
       rewrite indexr_skip. eauto. lia.
       rewrite indexr_skip. eauto. rewrite <- (𝒞𝓉𝓍_lengthρ C). lia.
       rewrite indexr_skip. eauto. rewrite <- (𝒞𝓉𝓍_lengthγ C). lia.
       apply val_type_extend_mem. rewrite (𝒞𝓉𝓍_lengthρ C) in H.
       rewrite (𝒞𝓉𝓍_lengthρ C) in l_T_closed0. auto. auto.
-      simpl. eapply closed_monotone; eauto. auto.
+      simpl. eapply closed_monotone; eauto.
 Qed.
 
 Lemma invert_var : forall {Γ x T}, has_type Γ (tvar (varF x)) T ->
@@ -1344,7 +1340,6 @@ with
       destruct (v1vs1inVtyT1T2 0) as [X [Xnvs1n vtT1]]. edestruct IHHty2.
       eapply @𝒞𝓉𝓍_cons_rec with (T := T1); eauto. pose (Hty1 := has_type_closed h1). destruct Hty1.
       inversion c2. subst. auto.
-      admit. (* TODO *)
       unfold vseta_mem in *. subst. unfold open' in *. rewrite (𝒞𝓉𝓍_lengthρ HΓργ). eapply vtT1.
       destruct H as [v2 [evalv2 [vs vtpT2X ] ]]. exists (k1 + x + 1). exists v2.
       split. destruct k1; destruct x; try solve [ simpl in *; discriminate].
@@ -1414,7 +1409,6 @@ with
       pose (IHHst2 := fundamental_stp _ _ _ s2). unfold vseta_sub_eq in IHHst2.
       assert (HC: 𝒞𝓉𝓍 (S2 :: Γ) (Dx :: ρ) (vx :: γ)). {
         apply 𝒞𝓉𝓍_cons; intuition. pose (HS2 := stp_closed s1). intuition.
-        admit. (* TODO *)
       }
       specialize (IHHst2 _ _ HC (S m)).
       apply IHHst2. rewrite Hopen1. intuition.
@@ -1432,7 +1426,6 @@ with
       unfold vseta_sub_eq in IHHst. specialize IHHst with (n := (S k)).
       eapply IHHst; eauto. eapply 𝒞𝓉𝓍_cons_rec; eauto.
       inversion c. auto.
-      admit. (* TODO *)
     + (* stp_and11 *)
       pose (IHHst := fundamental_stp _ _ _ s _ _ HΓργ (S n)).
       unfold_val_type in H. intuition.
@@ -1447,7 +1440,7 @@ with
       pose (IHHst1 := fundamental_stp _ _ _ s1 _ _ HΓργ (Datatypes.S n)).
       pose (IHHst2 := fundamental_stp _ _ _ s2 _ _ HΓργ (Datatypes.S n)).
       unfold vseta_sub_eq in *. intuition.
-Admitted.
+Qed.
 
 Lemma escape : forall {t T γ ρ}, ⟨ γ , t ⟩ ∈ ℰ (val_type T ρ) -> exists k v, eval k γ t = Done v.
 Proof.
