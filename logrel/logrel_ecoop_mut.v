@@ -574,10 +574,13 @@ Lemma splice_tm_open_tm_succ' : forall {t b} {A} {D : A} {ρ},
   intros. unfold open_tm'. simpl. eapply splice_tm_open_tm_succ. eauto.
 Qed.
 
-Lemma splice_tm_varF_inv : forall {t n x}, splice_tm n t = tvar (varF x) -> exists y, t = (tvar (varF y)).
+Lemma splice_tm_varF_inv : forall {t n x}, splice_tm n t = tvar (varF x) -> (exists y, t = (tvar (varF y)) /\ x = (S y) /\ n <= y) \/ (t = (tvar (varF x)) /\ x < n).
   intros t n x H.
   destruct t; simpl in H; try discriminate.
-  destruct v; eexists; eauto.
+  destruct v. destruct (le_lt_dec n i) eqn:Heq.
+  left. eexists; intuition. inversion H. auto.
+  right. inversion H. subst. intuition.
+  discriminate.
 Qed.
 
 Lemma splice_tm_varB_inv : forall {t n x}, splice_tm n t = tvar (varB x) -> t = (tvar (varB x)).
@@ -987,11 +990,14 @@ Lemma val_type_splice': forall {T ρ ρ'},
     unfold_val_type. rewrite <- indexr_insert_ge; auto. rewrite Hlookup. auto.
     unfold_val_type. rewrite <- indexr_insert_lt; auto. rewrite Hlookup. auto.
     pose (Htv := (val_type_tsel H0)). destruct Htv. subst.
-    apply splice_tm_varF_inv in H1. destruct H1. subst. simpl in *.
+    apply splice_tm_varF_inv in H1. destruct H1 as [ [x0 [teq [xSx0 lenx0]]]  | [teq xlen] ]; subst; simpl in *.
     destruct (le_lt_dec (length ρ') x0) as [Hx | Hx]; simpl in H0.
     unfold_val_type in H0. unfold_val_type.
     destruct (indexr x0 (ρ ++ ρ')) eqn:Hlookup; rewrite <- indexr_insert_ge in H0; auto;
       rewrite Hlookup in H0; auto.
+    unfold_val_type in H0. unfold_val_type.
+    rewrite <- indexr_insert_lt in H0; auto.
+    destruct (le_lt_dec (length ρ') x) as [Hx | Hx]. lia.
     unfold_val_type in H0. unfold_val_type.
     rewrite <- indexr_insert_lt in H0; auto.
   - (* TMem *)
@@ -1098,45 +1104,33 @@ Lemma val_type_rewire' : forall {T b ρ' ρ},
     1,4 : eapply closed_ty_open_succ; eauto.
     1,3 : simpl; lia.
     apply (IHU (S m)). auto. apply (IHD (S m)). auto.
-  - (* TSel *) admit.
-    (* split; destruct n; intuition; unfold vseta_sub_eq in *; unfold vset_sub_eq; intros; *)
-    (*   simpl; simpl in H2; pose (Htv := (val_type_tsel H2)); destruct Htv; apply open_rec_tm_var_inv in H3; *)
-    (*     destruct H3 as [[teq xeq] | teq ]; subst. *)
-    (* 3 : apply splice_tm_varB_inv in teq; subst. 4 : apply splice_tm_varF_inv in teq; destruct teq; subst. *)
-    (* all : simpl in *. 1,3 : rewrite PeanoNat.Nat.eqb_refl in *. *)
-    (* 1 : specialize (@val_type_splice (TSel (tvar (varF x0))) ρ' ρ) as HSp. *)
-    (* 2 : specialize (@val_type_unsplice (TSel (tvar (varF x))) ρ' ρ) as HSp. *)
-    (* 1,2 : unfold vseta_sub_eq in HSp; unfold vset_sub_eq in HSp; specialize HSp with (D:=D) (n:= (S n)). *)
-    (* simpl in HSp. *)
-
-(*       rewrite Hcmp in HSp; apply HSp; try solve [constructor; auto]; auto. *)
-(*     Focus 2. *)
-(*     3, 4 : destruct (le_lt_dec (length ρ) x0) eqn:Hcmp; simpl. *)
-(*     Focus 6. *)
-
-(*     Focus 4. *)
-
-(* Focus 2. *)
-
-(* 3, 4 : splice inv      *)
-
-(*     Focus 2. *)
-
-(*     ; destruct (le_lt_dec (length ρ) x0) eqn:Hcmp; simpl; simpl in H2. *)
-(*     1, 2: specialize (@val_type_splice (TSel (varF x0)) ρ' ρ) as HSp. *)
-(*     3, 4: specialize (@val_type_unsplice (TSel (varF x0)) ρ' ρ) as HSp. *)
-(*     all : unfold vseta_sub_eq in HSp; unfold vset_sub_eq in HSp; specialize HSp with (D:=D) (n:= (S n)); *)
-(*       simpl in HSp; rewrite Hcmp in HSp; apply HSp; try solve [constructor; auto]; auto. *)
-  (* - (* TSel VarB *) *)
-  (*   split; destruct n; intuition; unfold vseta_sub_eq in *; unfold vset_sub_eq; intros; *)
-  (*     simpl; simpl in H2; destruct (Nat.eqb j x0) eqn:Hcmp; simpl; simpl in H2; unfold_val_type; *)
-  (*       unfold_val_type in H2; eauto. *)
-  (*   rewrite indexr_skips. simpl. rewrite PeanoNat.Nat.eqb_refl. *)
-  (*   rewrite indexr_skips in H2. rewrite H0 in H2. auto. *)
-  (*   apply indexr_var_some' in H0. auto. simpl. lia. *)
-  (*   rewrite indexr_skips. rewrite H0. *)
-  (*   rewrite indexr_skips in H2. simpl in H2. rewrite PeanoNat.Nat.eqb_refl in H2. *)
-  (*   auto. simpl. lia. apply indexr_var_some' in H0. auto. *)
+  - (* TSel *)
+    clear IHT. split; destruct n; intuition; unfold vseta_sub_eq in *; unfold vset_sub_eq; intros;
+      simpl; simpl in H2; pose (Htv := (val_type_tsel H2)); destruct Htv.
+    + rewrite H3 in H2. apply open_rec_tm_var_inv in H3.
+      destruct H3 as [[teq xeq] | teq ]; subst; simpl in *.
+      -- rewrite PeanoNat.Nat.eqb_refl. unfold_val_type. unfold_val_type in H2.
+         rewrite indexr_skips; eauto. rewrite indexr_skips in H2. rewrite H0 in H2.
+         simpl. rewrite PeanoNat.Nat.eqb_refl. auto. eapply indexr_var_some'. eauto.
+      -- specialize (@val_type_splice (TSel (tvar (varF x0))) ρ' ρ) as HSp.
+         unfold vseta_sub_eq in HSp; unfold vset_sub_eq in HSp; specialize HSp with (D:=D) (n:= (S n)).
+         simpl in HSp. destruct (le_lt_dec (length ρ) x0) eqn:Hcmp; simpl.
+         all : apply HSp; eauto; constructor; constructor; inversion H5; auto.
+    + apply open_rec_tm_var_inv in H3.
+      destruct H3 as [[teq xeq] | teq ]; subst; simpl in *.
+      -- apply splice_tm_varB_inv in teq. subst. simpl in *.
+         rewrite PeanoNat.Nat.eqb_refl in *. unfold_val_type. unfold_val_type in H2.
+         rewrite indexr_skips; eauto. rewrite indexr_skips in H2; eauto. rewrite H0. simpl in H2.
+         rewrite PeanoNat.Nat.eqb_refl in H2. auto. eauto. eapply indexr_var_some'. eauto.
+      -- apply splice_tm_varF_inv in teq. destruct teq as [[y [teq [x0Sy leny]]] | [teq x0len] ].
+         ++ specialize (@val_type_unsplice (TSel (tvar (varF y))) ρ' ρ) as HSp.
+           unfold vseta_sub_eq in HSp; unfold vset_sub_eq in HSp; specialize HSp with (D:=D) (n:= (S n)).
+           subst. simpl in *. destruct (le_lt_dec (length ρ) y) eqn:Hcmp; simpl; simpl in H2.
+           all : eapply HSp; eauto; constructor; constructor; inversion H5; auto.
+         ++ specialize (@val_type_unsplice (TSel (tvar (varF x0))) ρ' ρ) as HSp.
+           unfold vseta_sub_eq in HSp; unfold vset_sub_eq in HSp; specialize HSp with (D:=D) (n:= (S n)).
+           subst. simpl in *. destruct (le_lt_dec (length ρ) x0) eqn:Hcmp; simpl; simpl in H2.
+           all : eapply HSp; eauto; constructor; constructor; inversion H5; auto.
   - (* TMem *)
     split; destruct n; intuition; unfold vseta_sub_eq in *; unfold vset_sub_eq in *; intros; unfold_val_type in H2;
       destruct v as [ γ' T' t | γ' T' ]; eauto; unfold_val_type; destruct n; intuition.
@@ -1161,7 +1155,7 @@ Lemma val_type_rewire' : forall {T b ρ' ρ},
       specialize (proj2 (IHT _ RAnd1 _ _ _ H6 _ D H0 _ H1) (S n)) as IH1';
       specialize (proj1 (IHT _ RAnd2 _ _ _ H7 _ D H0 _ H1) (S n)) as IH2;
       specialize (proj2 (IHT _ RAnd2 _ _ _ H7 _ D H0 _ H1) (S n)) as IH2'; auto.
-Admitted.
+Qed.
 
 Lemma val_type_rewire : forall {T b ρ},
     closed_ty (S b) (length ρ) T ->
