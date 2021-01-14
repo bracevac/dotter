@@ -4,6 +4,7 @@ Require Import Coq.Program.Equality.
 Require Import Coq.Lists.List.
 Require Import Psatz. (* mainly for lia *)
 Require Import PeanoNat.
+Require Import Coq.Arith.Compare_dec.
 Import ListNotations.
 
 (*
@@ -226,6 +227,45 @@ Inductive closed: nat(*B*) -> nat(*F*) -> tm -> Prop :=
 .
 Hint Constructors closed : dsub.
 
+Lemma closed_monotone : forall {T b f}, closed b f T -> forall {b' f'}, b <= b' -> f <= f' -> closed b' f' T.
+  intros T b f H. induction H; intuition.
+Qed.
+
+Lemma closed_open_id : forall {T b f}, closed b f T -> forall {n}, b <= n -> forall {t}, (open_rec n t T) = T.
+  intros T b f H. induction H; intros; simpl; auto;
+    try solve [erewrite IHclosed1; eauto; erewrite IHclosed2; eauto; lia | erewrite IHclosed; eauto; lia].
+    destruct (Nat.eqb n x) eqn:Heq; auto. apply beq_nat_true in Heq. lia.
+Qed.
+
+Lemma closed_open_front : forall {T b f}, closed (S b) f T -> forall {t b' f'}, closed b' f' t ->
+                    forall {b'' f''}, b <= b'' -> b' <= b'' -> f <= f'' -> f' <= f'' -> closed b'' f'' (open_rec b t T).
+  induction T; intros; simpl; intuition; inversion H; subst; try constructor;
+    try solve [eapply IHT1; eauto; lia
+              | eapply IHT2; eauto; lia; eapply closed_monotone; eauto
+              | eapply IHT; eauto; lia; eapply closed_monotone; eauto].
+  destruct (Nat.eqb b x) eqn:Heq; intuition. eapply closed_monotone; eauto; lia.
+  apply beq_nat_false in Heq. constructor. lia. lia.
+Qed.
+
+Lemma closed_open_middle : forall {T b f}, closed b f T -> forall {t b' f'}, closed b' f' t ->
+                    forall {b'' f'' i}, i < b -> b <= b'' -> b' <= b'' -> f <= f'' -> f' <= f'' -> closed b'' f'' (open_rec i t T).
+  induction T; intros; simpl; intuition; inversion H; subst; try constructor;
+    try solve [eapply IHT1; eauto; lia
+              | eapply IHT2; eauto; lia; eapply closed_monotone; eauto
+              | eapply IHT; eauto; lia; eapply closed_monotone; eauto].
+  destruct (Nat.eqb i x) eqn:Heq; intuition. eapply closed_monotone; eauto; lia. lia.
+Qed.
+
+Lemma closed_open_var : forall {T b f}, closed (S b) f T -> forall {x}, x < f -> closed b f (open_rec b $x T).
+  intros. eapply closed_open_front; eauto. constructor. auto.
+Qed.
+
+Lemma closed_open_succ_f : forall {T b f}, closed b f T -> forall {j}, closed b (S f) (open_rec j $f T).
+  intros. destruct (le_lt_dec b j) eqn:Heq.
+  - erewrite closed_open_id; eauto. eapply closed_monotone; eauto.
+  - eapply closed_open_middle; eauto. constructor. auto.
+Qed.
+
 (* Legal type expressions *)
 Inductive type : tm -> Prop :=
 | ty_ttop : type TTop
@@ -415,38 +455,6 @@ with
 Hint Constructors has_type : dsub.
 Hint Constructors stp : dsub.
 
-Lemma closed_monotone : forall {T b f}, closed b f T -> forall {b' f'}, b <= b' -> f <= f' -> closed b' f' T.
-  intros T b f H. induction H; intuition.
-Qed.
-
-Lemma closed_open_id : forall {T b f}, closed b f T -> forall {n}, b <= n -> forall {x}, (open_rec n x T) = T.
-  intros T b f H. induction H; intros; simpl; auto;
-    try solve [erewrite IHclosed1; eauto; erewrite IHclosed2; eauto; lia | erewrite IHclosed; eauto; lia].
-    destruct (Nat.eqb n x) eqn:Heq; auto. apply beq_nat_true in Heq. lia.
-Qed.
-
-Lemma closed_open : forall {T b f}, closed (S b) f T -> forall {x}, x < f -> closed b f (open_rec b $x T).
-  induction T; intros; simpl; intuition; inversion H; subst; try constructor;
-  try solve [apply IHT1; auto | apply IHT2; auto | apply IHT; auto ].
-  destruct (Nat.eqb b x0) eqn:Heq; intuition.
-  apply beq_nat_false in Heq. constructor. lia. auto.
-Qed.
-
-Lemma closed_open_ge : forall {T b f}, closed (S b) f T -> forall {x}, f <= x -> closed b (S x) (open_rec b $x T).
-  induction T; intros; simpl; intuition; inversion H; subst; try constructor;
-      try solve [eapply IHT1; eauto | eapply IHT2; eauto | eapply IHT; eauto ].
-  destruct (Nat.eqb b x0) eqn:Heq. intuition.
-  apply beq_nat_false in Heq. inversion H. subst.
-  constructor. lia. lia.
-Qed.
-
-Lemma closed_open_succ : forall {T b f}, closed b f T -> forall {j}, closed b (S f) (open_rec j $f T).
-  induction T; intros; simpl; intuition; inversion H; subst; try constructor;
-    try solve [eapply IHT1; eauto | eapply IHT2; eauto | eapply IHT; eauto ].
-    destruct (Nat.eqb j x) eqn:Heq. intuition.
-    apply beq_nat_false in Heq. inversion H. subst. intuition. lia.
-Qed.
-
 Lemma has_type_var_length : forall {Γ x T}, has_type Γ $x T -> x < length Γ.
   intros. dependent induction H; eauto.
   apply indexr_var_some' in H. auto.
@@ -458,15 +466,15 @@ with     stp_closed       {Γ S T} (stp : stp Γ S T)      : closed 0 (length Γ
       try apply has_type_closed in ht2; intuition.
     + apply indexr_var_some' in H. intuition.
     + inversion H. subst. intuition.
-    + inversion b. inversion a0. apply closed_open; auto.
+    + inversion H; subst; inversion b; inversion a0; try lia; eapply closed_open_front; eauto.
+      constructor. auto.
     + apply stp_closed in H. intuition.
   - destruct stp; intuition; try apply stp_closed in stp0; try apply stp_closed in stp1;
-      try apply stp_closed in stp2; try apply indexr_var_some' in H; intuition.
-    1,2 : inversion b; auto.
-    1,2 : apply has_type_closed in H; intuition; inversion a; intuition.
+      try apply stp_closed in stp2; try apply indexr_var_some' in H; intuition;
+        apply has_type_closed in H; intuition; inversion b; auto.
 Qed.
 
-Require Import Coq.Arith.Compare_dec.
+(* TODO : show that typing and subtyping yield proper types and terms *)
 
 Fixpoint splice (n : nat) (T : tm) {struct T} : tm :=
   match T with
@@ -952,7 +960,7 @@ Lemma val_type_splice': forall {T ρ ρ'},
     Unfocus. 2,4 : apply splice_open'.
     all: specialize (IHT _ (@RAll2 _ _ _ (ρ ++ ρ')) (Dx :: ρ) ρ') as IHT2;
       assert (Hc : closed 0 (length ((Dx :: ρ) ++ ρ')) (open' (ρ ++ ρ') T2)).
-    1,3: unfold open'; simpl; eapply closed_open; eauto; eapply closed_monotone; eauto; lia; lia; lia.
+    1,3: unfold open'; simpl; eapply closed_open_var; eauto; eapply closed_monotone; eauto; lia; lia; lia.
     all : eapply IHT2 in Hc. apply (proj1 Hc (S m)); auto. apply (proj2 Hc (S m)). apply HT2.
   - (* TSel *)
     intuition; unfold vseta_sub_eq in *; intros n; destruct n; intuition;
@@ -985,7 +993,7 @@ Lemma val_type_splice': forall {T ρ ρ'},
   - (* TBind *)
     inversion H. subst.
     assert (HclT : forall X, closed 0 (length ((X :: ρ) ++ ρ')) (open' (ρ ++ ρ') T)). {
-      simpl. intros. eapply closed_open. eauto. eapply closed_monotone. eauto. lia. lia. lia. }
+      simpl. intros. eapply closed_open_var. eauto. eapply closed_monotone. eauto. lia. lia. lia. }
     intuition; unfold vseta_sub_eq in *; intros n; destruct n; intuition;
       inversion H; subst; simpl; intros; unfold_val_type; unfold_val_type in H0;
         destruct H0 as [X [Xnvs' vvs'TX]]; exists X; intuition;
@@ -1078,7 +1086,7 @@ Lemma val_type_rewire' : forall {T b ρ' ρ},
     all : unfold open' in HSp. rewrite <- HSp. 2 : rewrite <- HSp in HvyinT2.
     all : specialize (IHT _ (@RAll2 _ _ _ (ρ' ++ ρ)) (S b) (Dx :: ρ') ρ) with (x := x) (D := D) (j := (S j)).
     all : unfold open' in IHT; edestruct IHT as [IHU IHD]; auto.
-    1,4 : eapply closed_open_succ; eauto.
+    1,4 : eapply closed_open_succ_f; eauto.
     1,3 : simpl; lia.
     apply (IHU (S m)). auto. apply (IHD (S m)). auto.
   - (* TSel *)
@@ -1124,7 +1132,7 @@ Lemma val_type_rewire' : forall {T b ρ' ρ},
     rewrite <- HSp. 2: rewrite <- HSp in vvs'TX.
     all: specialize (IHT _ (@RBind _ _ (ρ' ++ ρ)) (S b) (X :: ρ') ρ) with (x := x) (D := D) (j := (S j)).
     all : unfold open' in IHT; edestruct IHT as [IHU IHD]; auto.
-    1,4 : eapply closed_open_succ; eauto.
+    1,4 : eapply closed_open_succ_f; eauto.
     1,3 : lia. apply (IHU (S k)). auto. apply (IHD (S k)). auto.
   - (* TAnd *)
     split; destruct n; intuition; simpl; intros; unfold_val_type in H2; unfold_val_type; intuition;
@@ -1233,7 +1241,7 @@ Lemma lookup {Γ ρ γ} (C : 𝒞𝓉𝓍 Γ ρ γ) : forall {x}, x < length Γ 
       apply indexr_head.
       rewrite (𝒞𝓉𝓍_lengthρ C). apply indexr_head.
       rewrite (𝒞𝓉𝓍_lengthγ C). apply indexr_head.
-      auto. subst. unfold open'. eapply closed_open; eauto.
+      auto. subst. unfold open'. eapply closed_open_var; eauto.
       simpl. eapply closed_monotone; eauto.
     + apply IHC in H4. inversion H4. destruct X.
       constructor. econstructor. simpl. lia.
