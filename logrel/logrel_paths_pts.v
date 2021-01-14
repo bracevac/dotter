@@ -150,7 +150,7 @@ Inductive vl : Type :=
 Definition tenv := list tm. (* Γ environment: static *)
 Definition venv := list vl. (* H environment: run-time *)
 
-Fixpoint open_rec (k: nat) (u: var) (T: tm) { struct T }: tm :=
+Fixpoint open_rec (k: nat) (u: tm) (T: tm) { struct T }: tm :=
   match T with
   | TTop            => TTop
   | TBot            => TBot
@@ -168,8 +168,8 @@ Fixpoint open_rec (k: nat) (u: var) (T: tm) { struct T }: tm :=
   end
 .
 
-Definition open (u : var) T := open_rec 0 u T.
-Definition open' {A : Type} (env : list A) T := open_rec 0 (varF (length env)) T.
+Definition open (u : tm) T := open_rec 0 u T.
+Definition open' {A : Type} (env : list A) T := open_rec 0 $(length env) T.
 
 Lemma open_rec_commute : forall T i j x y, i <> j -> open_rec i $x (open_rec j $y T) = open_rec j $y (open_rec i $x T).
   induction T; intros; simpl; eauto;
@@ -471,8 +471,6 @@ with     stp_closed       {Γ S T} (stp : stp Γ S T)      : closed 0 (length Γ
 Qed.
 
 Require Import Coq.Arith.Compare_dec.
-
-Print le_lt_dec.
 
 Fixpoint splice (n : nat) (T : tm) {struct T} : tm :=
   match T with
