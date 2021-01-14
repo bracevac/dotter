@@ -7,37 +7,32 @@ Require Import PeanoNat.
 Import ListNotations.
 
 (*
-  Recreation of Wang and Rompf's SN proof.
-
-  Differences:
-
-
-  - Lumps type and term syntax into one syntactic category, PTS-style.
-
-  - Locally nameless for terms also, to prepare for extending the path syntax.
-  - Overall more high level with definitions that are easier relatable
-    to pen and paper formulation.
-  - Standard formulation of fundamental lemma for typing and subtyping.
-  - Logical relation definition (val_type) with better performance, using Coq's
-    well-founded recursion library.
+  SN for a DOT with richer path expressions.
 
   TODOs :
+
+  - Equality/conversion rules
 
   - TBind as general fixpoint on the domain, to prepare for richer recursive types.
 
   Compatible with Coq 8.12.1.
 *)
 
-
+Declare Scope dsub.
 (* ### Syntax ### *)
 
 Definition id := nat.
 
 (* locally nameless for binders in types and terms *)
 Inductive var : Type :=
-| varF : id -> var (* free var *)
-| varB : id -> var (* locally-bound variable *)
+| varF : id -> var (* free var, deBruijn level *)
+| varB : id -> var (* locally-bound variable, deBruijn index *)
 .
+
+Notation "# i" := (varB i) (at level 0) : dsub.
+Notation "$ x" := (varF x) (at level 0) : dsub.
+
+Open Scope dsub.
 
 Inductive tm : Type :=
 | TTop    : tm
@@ -54,6 +49,8 @@ Inductive tm : Type :=
 | tunpack : tm  -> tm -> tm
 .
 
+Coercion tvar : var >-> tm.
+
 (* ### Representation of Bindings ### *)
 
 (* An environment is a list of values, indexed by decrementing ids. *)
@@ -63,7 +60,7 @@ Fixpoint indexr {X : Type} (n : id) (l : list X) : option X :=
   match l with
     | [] => None
     | a :: l' =>
-      if (beq_nat n (length l')) then Some a else indexr n l'
+      if (n =? (length l')) then Some a else indexr n l'
   end.
 
 Lemma indexr_head : forall {A} {x : A} {xs}, indexr (length xs) (x :: xs) = Some x.
@@ -162,8 +159,8 @@ Fixpoint open_rec (k: nat) (u: var) (T: tm) { struct T }: tm :=
   | TMem    T1 T2   => TMem  (open_rec k u T1)    (open_rec k u T2)
   | TBind   T       => TBind (open_rec (S k) u T)
   | TAnd    T1 T2   => TAnd  (open_rec k u T1)    (open_rec k u T2)
-  | tvar   (varF x) => tvar (varF x)
-  | tvar   (varB x) => if beq_nat k x then tvar u else tvar (varB x)
+  | $x              => $x
+  | #x              => if k =? x then u else #x
   | ttyp    T       => ttyp    (open_rec k u T)
   | tabs    T  t    => tabs    (open_rec k u T)  (open_rec (S k) u t)
   | tapp    t1 t2   => tapp    (open_rec k u t1) (open_rec k u t2)
@@ -174,7 +171,7 @@ Fixpoint open_rec (k: nat) (u: var) (T: tm) { struct T }: tm :=
 Definition open (u : var) T := open_rec 0 u T.
 Definition open' {A : Type} (env : list A) T := open_rec 0 (varF (length env)) T.
 
-Lemma open_rec_commute : forall T i j x y, i <> j -> open_rec i (varF x) (open_rec j (varF y) T) = open_rec j (varF y) (open_rec i (varF x) T).
+Lemma open_rec_commute : forall T i j x y, i <> j -> open_rec i $x (open_rec j $y T) = open_rec j $y (open_rec i $x T).
   induction T; intros; simpl; eauto;
     try solve [rewrite IHT1; eauto; rewrite IHT2; eauto | rewrite IHT; eauto].
   destruct v. intuition.
@@ -183,7 +180,7 @@ Lemma open_rec_commute : forall T i j x y, i <> j -> open_rec i (varF x) (open_r
   apply beq_nat_true in Hii0. apply beq_nat_true in Hji0. subst. contradiction.
 Qed.
 
-Lemma open_rec_var_inv : forall {t n x y}, open_rec n (varF x) t = tvar (varF y) -> (t = (tvar (varB n)) /\ x = y) \/ (t = tvar (varF y)).
+Lemma open_rec_var_inv : forall {t n x y}, open_rec n $x t = $y -> (t = #n /\ x = y) \/ (t = $y).
   intros t n x y H. destruct t; simpl in H; try discriminate.
   destruct v. auto.
   destruct (Nat.eqb n i) eqn:Heq. apply beq_nat_true in Heq.
@@ -215,10 +212,10 @@ Inductive closed: nat(*B*) -> nat(*F*) -> tm -> Prop :=
     closed b f (TAnd T1 T2)
 | cl_tvarb: forall b f x,
     x < b ->
-    closed b f (tvar (varB x))
+    closed b f #x
 | cl_tvarf: forall b f x,
     x < f ->
-    closed b f (tvar (varF x))
+    closed b f $x
 | cl_ttyp:  forall b f T,
     closed b f T ->
     closed b f (ttyp T)
@@ -237,35 +234,22 @@ Inductive closed: nat(*B*) -> nat(*F*) -> tm -> Prop :=
 .
 Hint Constructors closed : dsub.
 
-(* Legal path expressions in type selections *)
-Inductive path : tm -> Prop :=
-| p_var : forall v, path (tvar v)
-.
-
-Lemma open_path : forall {p}, path p <-> forall {j x}, path (open_rec j x p).
-  split.
-  - intros H. induction H; simpl; intuition.
-    destruct v. constructor. destruct (Nat.eqb j i) eqn:Heq; constructor.
-  - intros H. destruct p; simpl in *; try solve [specialize  (H 0 (varF 0)); inversion H].
-    constructor.
-Qed.
-
 (* Legal type expressions *)
 Inductive type : tm -> Prop :=
-| ty_top : type TTop
+| ty_ttop : type TTop
 
-| ty_bot : type TBot
+| ty_tbot : type TBot
 
-| ty_all : forall T1 T2,
+| ty_tall : forall T1 T2,
     type T1 ->
     type T2 ->
     type (TAll T1 T2)
 
-| ty_sel : forall t,
+| ty_tsel : forall t,
     path t ->
     type (TSel t)
 
-| ty_mem : forall T1 T2,
+| ty_tmem : forall T1 T2,
     type T1 ->
     type T2 ->
     type (TMem T1 T2)
@@ -278,20 +262,45 @@ Inductive type : tm -> Prop :=
     type T1 ->
     type T2 ->
     type (TAnd T1 T2)
+with path : tm -> Prop := (* Legal path expressions in type selections *)
+| p_tvar : forall v, path (tvar v)
+
+| p_ttyp : forall T,
+    type T ->
+    path (ttyp T)
+
+| p_tabs : forall T t,
+    type T ->
+    path t ->
+    path (tabs T t)
+
+| p_app : forall t1 t2,
+    path t1 ->
+    path t2 ->
+    path (tapp t1 t2)
 .
+
 Hint Constructors type : dsub.
 
-Lemma open_type : forall {T}, type T -> (forall {j x}, type (open_rec j x T)).
-  intros T H. induction H; simpl; constructor;
-                try solve [eapply IHtype1; eauto | eapply IHtype2; eauto | eapply IHtype; eauto].
-  rewrite open_path in H. auto.
-Qed.
+(* Lemma open_path : forall {p}, path p <-> forall {j x}, path (open_rec j x p). *)
+(*   split. *)
+(*   - intros H. induction H; simpl; intuition. *)
+(*     destruct v. constructor. destruct (Nat.eqb j i) eqn:Heq; constructor. *)
+(*   - intros H. destruct p; simpl in *; try solve [specialize  (H 0 (varF 0)); inversion H]. *)
+(*     constructor. *)
+(* Qed. *)
+
+(* Lemma open_type : forall {T}, type T -> (forall {j x}, type (open_rec j x T)). *)
+(*   intros T H. induction H; simpl; constructor; *)
+(*                 try solve [eapply IHtype1; eauto | eapply IHtype2; eauto | eapply IHtype; eauto]. *)
+(*   rewrite open_path in H. auto. *)
+(* Qed. *)
 
 Inductive has_type : tenv -> tm -> tm -> Prop :=
 | t_var : forall Γ x T,
     indexr x Γ = Some T ->
     closed 0 (length Γ) T ->
-    has_type Γ (tvar (varF x)) T
+    has_type Γ $x T
 
 | t_typ : forall Γ T,
     closed 0 (length Γ) T ->
@@ -313,18 +322,18 @@ Inductive has_type : tenv -> tm -> tm -> Prop :=
 
 | t_dapp : forall Γ t1 x T1 T2,
     has_type Γ t1 (TAll T1 T2) ->
-    has_type Γ (tvar (varF x)) T1 ->
-    has_type Γ (tapp t1 (tvar (varF x))) (open (varF x) T2)
+    has_type Γ $x T1 ->
+    has_type Γ (tapp t1 $x) (open $x T2)
 
 | t_and : forall Γ x T1 T2,
-    has_type Γ (tvar (varF x)) T1 ->
-    has_type Γ (tvar (varF x)) T2 ->
-    has_type Γ (tvar (varF x)) (TAnd T1 T2)
+    has_type Γ $x T1 ->
+    has_type Γ $x T2 ->
+    has_type Γ $x (TAnd T1 T2)
 
 | t_var_pack : forall Γ x T,
     closed 0 (length Γ) (TBind T) ->
-    has_type Γ (tvar (varF x)) (open (varF x) T) ->
-    has_type Γ (tvar (varF x)) (TBind T)
+    has_type Γ $x (open $x T) ->
+    has_type Γ $x (TBind T)
 
 | t_unpack : forall Γ t1 t2 T1 T1' T2,
     has_type Γ t1 (TBind T1) ->
@@ -359,16 +368,16 @@ with
   | stp_sel1 : forall Γ x T1 T,
       indexr x Γ = Some T1 ->
       stp Γ T1 (TMem T TTop) ->
-      stp Γ T (TSel (tvar (varF x)))
+      stp Γ T (TSel $x)
 
   | stp_sel2 : forall Γ x T1 T,
       indexr x Γ = Some T1 ->
       stp Γ T1 (TMem TBot T) ->
-      stp Γ (TSel (tvar (varF x))) T
+      stp Γ (TSel $x) T
 
   | stp_selx : forall Γ x T1 T2,
-      has_type Γ (tvar (varF x)) (TMem T1 T2) ->
-      stp Γ (TSel (tvar (varF x))) (TSel (tvar (varF x)))
+      has_type Γ $x (TMem T1 T2) ->
+      stp Γ (TSel $x) (TSel $x)
 
   | stp_all : forall Γ S1 S2 T1 T2,
       stp Γ S2 S1 ->
@@ -420,14 +429,14 @@ Lemma closed_open_id : forall {T b f}, closed b f T -> forall {n}, b <= n -> for
     destruct (Nat.eqb n x) eqn:Heq; auto. apply beq_nat_true in Heq. lia.
 Qed.
 
-Lemma closed_open : forall {T b f}, closed (S b) f T -> forall {x}, x < f -> closed b f (open_rec b (varF x) T).
+Lemma closed_open : forall {T b f}, closed (S b) f T -> forall {x}, x < f -> closed b f (open_rec b $x T).
   induction T; intros; simpl; intuition; inversion H; subst; try constructor;
   try solve [apply IHT1; auto | apply IHT2; auto | apply IHT; auto ].
   destruct (Nat.eqb b x0) eqn:Heq; intuition.
   apply beq_nat_false in Heq. constructor. lia. auto.
 Qed.
 
-Lemma closed_open_ge : forall {T b f}, closed (S b) f T -> forall {x}, f <= x -> closed b (S x) (open_rec b (varF x) T).
+Lemma closed_open_ge : forall {T b f}, closed (S b) f T -> forall {x}, f <= x -> closed b (S x) (open_rec b $x T).
   induction T; intros; simpl; intuition; inversion H; subst; try constructor;
       try solve [eapply IHT1; eauto | eapply IHT2; eauto | eapply IHT; eauto ].
   destruct (Nat.eqb b x0) eqn:Heq. intuition.
@@ -435,14 +444,14 @@ Lemma closed_open_ge : forall {T b f}, closed (S b) f T -> forall {x}, f <= x ->
   constructor. lia. lia.
 Qed.
 
-Lemma closed_open_succ : forall {T b f}, closed b f T -> forall {j}, closed b (S f) (open_rec j (varF f) T).
+Lemma closed_open_succ : forall {T b f}, closed b f T -> forall {j}, closed b (S f) (open_rec j $f T).
   induction T; intros; simpl; intuition; inversion H; subst; try constructor;
     try solve [eapply IHT1; eauto | eapply IHT2; eauto | eapply IHT; eauto ].
     destruct (Nat.eqb j x) eqn:Heq. intuition.
     apply beq_nat_false in Heq. inversion H. subst. intuition. lia.
 Qed.
 
-Lemma has_type_var_length : forall {Γ x T}, has_type Γ (tvar (varF x)) T -> x < length Γ.
+Lemma has_type_var_length : forall {Γ x T}, has_type Γ $x T -> x < length Γ.
   intros. dependent induction H; eauto.
   apply indexr_var_some' in H. auto.
 Qed.
@@ -463,6 +472,8 @@ Qed.
 
 Require Import Coq.Arith.Compare_dec.
 
+Print le_lt_dec.
+
 Fixpoint splice (n : nat) (T : tm) {struct T} : tm :=
   match T with
   | TTop           => TTop
@@ -472,10 +483,8 @@ Fixpoint splice (n : nat) (T : tm) {struct T} : tm :=
   | TMem  T1 T2    => TMem    (splice n T1) (splice n T2)
   | TBind T        => TBind   (splice n T)
   | TAnd  T1 T2    => TAnd    (splice n T1) (splice n T2)
-  | tvar (varF i)  =>
-    if le_lt_dec n i then tvar (varF (S i))
-    else tvar (varF i)
-  | tvar (varB i)  => tvar    (varB i)
+  | $i             => if le_lt_dec n i then $(S i) else $i
+  | #i             => #i
   | ttyp    T      => ttyp    (splice n T)
   | tabs    T  t   => tabs    (splice n T)  (splice n t)
   | tapp    t1 t2  => tapp    (splice n t1) (splice n t2)
@@ -488,7 +497,7 @@ Lemma splice_id : forall {T b f}, closed b f T -> (splice f T ) = T.
     destruct (le_lt_dec f x) eqn:Heq. lia. auto.
 Qed.
 
-Lemma splice_open : forall {T j n m}, splice n (open_rec j (varF (m + n)) T) = open_rec j (varF (S (m + n))) (splice n T).
+Lemma splice_open : forall {T j n m}, splice n (open_rec j $(m + n) T) = open_rec j $(S (m + n)) (splice n T).
   induction T; intros; simpl; auto;
     try solve [erewrite IHT1; eauto; erewrite IHT2; eauto | erewrite IHT; eauto].
   destruct v; simpl. destruct (le_lt_dec n i) eqn:Heq; auto.
@@ -517,7 +526,7 @@ Lemma splice_closed' : forall {T b} {A} {D : A} {ρ ρ'},
   apply splice_closed. auto. simpl. rewrite app_length. simpl. lia.
 Qed.
 
-Lemma splice_open_succ : forall {T b n j}, closed b n T -> splice n (open_rec j (varF n) T) = open_rec j (varF (S n)) T.
+Lemma splice_open_succ : forall {T b n j}, closed b n T -> splice n (open_rec j $n T) = open_rec j $(S n) T.
   induction T; simpl; intros; inversion H; subst; auto;
     try solve [erewrite IHT1; eauto; erewrite IHT2; eauto | erewrite IHT; eauto].
   destruct (Nat.eqb j x) eqn:Heq; auto. simpl.
@@ -530,7 +539,7 @@ Lemma splice_open_succ' : forall {T b} {A} {D : A} {ρ},
   intros. unfold open'. simpl. eapply splice_open_succ. eauto.
 Qed.
 
-Lemma splice_varF_inv : forall {t n x}, splice n t = tvar (varF x) -> (exists y, t = (tvar (varF y)) /\ x = (S y) /\ n <= y) \/ (t = (tvar (varF x)) /\ x < n).
+Lemma splice_varF_inv : forall {t n x}, splice n t = $x -> (exists y, t = $y /\ x = (S y) /\ n <= y) \/ (t = $x /\ x < n).
   intros t n x H.
   destruct t; simpl in H; try discriminate.
   destruct v. destruct (le_lt_dec n i) eqn:Heq.
@@ -539,7 +548,7 @@ Lemma splice_varF_inv : forall {t n x}, splice n t = tvar (varF x) -> (exists y,
   discriminate.
 Qed.
 
-Lemma splice_varB_inv : forall {t n x}, splice n t = tvar (varB x) -> t = (tvar (varB x)).
+Lemma splice_varB_inv : forall {t n x}, splice n t = #x -> t = #x.
   intros t n x H.
   destruct t; simpl in H; try discriminate.
   destruct v. destruct (le_lt_dec n i) eqn:Heq; discriminate.
@@ -560,7 +569,7 @@ Fixpoint eval(fuel : nat)(γ : venv)(t : tm){struct fuel}: Result :=
   | 0   => NoFuel
   | S n =>
     match t with
-    | tvar (varF x) =>
+    | $x =>
       match (indexr x γ) with
       | Some v => Done v
       | None   => Error
@@ -637,12 +646,11 @@ Fixpoint tsize_flat(T: tm) :=
     end.
 
 
-Lemma open_preserves_size: forall T x j, tsize_flat T = tsize_flat (open_rec j (varF x) T).
+Lemma open_preserves_size: forall T x j, tsize_flat T = tsize_flat (open_rec j $x T).
   induction T; intros; simpl; eauto.
   destruct v. auto. destruct (Nat.eqb j i); auto.
 Qed.
 
-Declare Scope dsub.
 
 Fixpoint vset (n : nat): Type := match n with
                                | 0 => vl -> Prop
@@ -842,7 +850,7 @@ Definition val_type_naked (T : tm) : (forall T', R T' T -> denv -> Dom) -> denv 
                       {{ '(vabs γ _ t) D n | forall vx Dx, ⦑ vx, Dx ⦒ ⋵ (val_type T1 RAll1 ρ) ->
                                                      ⟨ (vx :: γ) , (open' γ t)  ⟩ ∈ ℰ (val_type (open' ρ T2) RAll2 (Dx :: ρ))  }}
 
-  | TSel (tvar (varF x)) => fun _ ρ =>
+  | TSel $x       => fun _ ρ =>
                        match indexr x ρ with
                        | Some D => D
                        | None   => vseta_bot
@@ -892,10 +900,10 @@ Lemma val_type_tsel_path : forall {t ρ n vs v}, val_type (TSel t) ρ (S n) vs v
   intros. unfold_val_type in H. destruct t; intuition. constructor.
 Qed.
 
-Lemma val_type_tsel : forall {t ρ n vs v}, val_type (TSel t) ρ (S n) vs v -> exists x, t = tvar (varF x).
+Lemma val_type_tsel : forall {t : tm} {ρ n vs v}, val_type (TSel t) ρ (S n) vs v -> exists x, t = $x.
   intros.
   pose (H' := val_type_tsel_path H). inversion H'. subst. destruct v0.
-  exists i. auto. clear H'. unfold_val_type in H. contradiction.
+  exists i. auto. all : subst; clear H'; unfold_val_type in H; contradiction.
 Qed.
 
 (* TODO it would be nicer to have this more general lemma, but it seems impossible to prove
@@ -1038,7 +1046,7 @@ Qed.
 Lemma val_type_rewire' : forall {T b ρ' ρ},
     closed b (length (ρ' ++ ρ)) T ->
     forall {x D}, indexr x ρ = Some D ->
-             forall {j}, j < b -> val_type (open_rec j (varF x) T) (ρ' ++ ρ) === val_type (open_rec j (varF (length ρ)) (splice (length ρ) T)) (ρ' ++ D :: ρ).
+             forall {j}, j < b -> val_type (open_rec j $x T) (ρ' ++ ρ) === val_type (open_rec j $(length ρ) (splice (length ρ) T)) (ρ' ++ D :: ρ).
   induction T as [T IHT] using (well_founded_induction wfR).
   intros. unfold vseta_sub_eq in *. destruct T; inversion H; subst; try solve [intuition].
   - (* TAll *)
@@ -1047,12 +1055,12 @@ Lemma val_type_rewire' : forall {T b ρ' ρ},
          unfold elem2 in *; unfold ℰ in *; intuition; specialize (H2 vx Dx).
      (* TODO: just as in our agda development, there is a nice proof combinator for Pi types lurking
       in this file's proofs. *)
-     assert (HT1 : vseta_mem vx Dx (val_type (open_rec j (varF x) T1) (ρ' ++ ρ))). {
+     assert (HT1 : vseta_mem vx Dx (val_type (open_rec j $x T1) (ρ' ++ ρ))). {
       unfold vseta_sub_eq in *. unfold vseta_mem in *.
       unfold vset_sub_eq in *.  intros m.
       specialize (proj2 (IHT _ RAll1 _ _ _ H6 _ _ H0 _ H1) (S m)) as IH1.
       simpl in *. apply IH1. auto. }
-     Focus 2. assert (HT1 : vseta_mem vx Dx (val_type (open_rec j (varF (length ρ)) (splice (length ρ) T1))
+     Focus 2. assert (HT1 : vseta_mem vx Dx (val_type (open_rec j $(length ρ) (splice (length ρ) T1))
                                                       (ρ' ++ D :: ρ))). {
       unfold vseta_sub_eq in *. unfold vseta_mem in *.
       unfold vset_sub_eq in *.  intros m.
@@ -1080,7 +1088,7 @@ Lemma val_type_rewire' : forall {T b ρ' ρ},
       -- rewrite Nat.eqb_refl. unfold_val_type. unfold_val_type in H2.
          rewrite indexr_skips; eauto. rewrite indexr_skips in H2. rewrite H0 in H2.
          simpl. rewrite Nat.eqb_refl. auto. eapply indexr_var_some'. eauto.
-      -- specialize (@val_type_splice (TSel (tvar (varF x0))) ρ' ρ) as HSp.
+      -- specialize (@val_type_splice (TSel $x0) ρ' ρ) as HSp.
          unfold vseta_sub_eq in HSp; unfold vset_sub_eq in HSp; specialize HSp with (D:=D) (n:= (S n)).
          simpl in HSp. destruct (le_lt_dec (length ρ) x0) eqn:Hcmp; simpl.
          all : apply HSp; eauto; constructor; constructor; inversion H5; auto.
@@ -1091,11 +1099,11 @@ Lemma val_type_rewire' : forall {T b ρ' ρ},
          rewrite indexr_skips; eauto. rewrite indexr_skips in H2; eauto. rewrite H0. simpl in H2.
          rewrite Nat.eqb_refl in H2. auto. eauto. eapply indexr_var_some'. eauto.
       -- apply splice_varF_inv in teq. destruct teq as [[y [teq [x0Sy leny]]] | [teq x0len] ].
-         ++ specialize (@val_type_unsplice (TSel (tvar (varF y))) ρ' ρ) as HSp.
+         ++ specialize (@val_type_unsplice (TSel $y) ρ' ρ) as HSp.
            unfold vseta_sub_eq in HSp; unfold vset_sub_eq in HSp; specialize HSp with (D:=D) (n:= (S n)).
            subst. simpl in *. destruct (le_lt_dec (length ρ) y) eqn:Hcmp; simpl; simpl in H2.
            all : eapply HSp; eauto; constructor; constructor; inversion H5; auto.
-         ++ specialize (@val_type_unsplice (TSel (tvar (varF x0))) ρ' ρ) as HSp.
+         ++ specialize (@val_type_unsplice (TSel $x0) ρ' ρ) as HSp.
            unfold vseta_sub_eq in HSp; unfold vset_sub_eq in HSp; specialize HSp with (D:=D) (n:= (S n)).
            subst. simpl in *. destruct (le_lt_dec (length ρ) x0) eqn:Hcmp; simpl; simpl in H2.
            all : eapply HSp; eauto; constructor; constructor; inversion H5; auto.
@@ -1131,7 +1139,7 @@ Qed.
 Lemma val_type_rewire : forall {T b ρ},
     closed (S b) (length ρ) T ->
     forall {x D}, indexr x ρ = Some D ->
-                  val_type (open (varF x) T) ρ === val_type (open' ρ T) (D :: ρ).
+                  val_type (open $x T) ρ === val_type (open' ρ T) (D :: ρ).
   intros. specialize (@val_type_rewire' T (S b) [] ρ) with (x:=x) (D:=D) (j:=0) as Hw.
   simpl in Hw. erewrite splice_id in Hw. destruct Hw; eauto. lia. eauto.
 Qed.
@@ -1236,11 +1244,11 @@ Lemma lookup {Γ ρ γ} (C : 𝒞𝓉𝓍 Γ ρ γ) : forall {x}, x < length Γ 
       simpl. eapply closed_monotone; eauto.
 Qed.
 
-Lemma invert_var : forall {Γ x T}, has_type Γ (tvar (varF x)) T ->
+Lemma invert_var : forall {Γ x T}, has_type Γ $x T ->
                               (forall {Γ S T}, stp Γ S T -> forall{ρ γ}, 𝒞𝓉𝓍 Γ ρ γ -> (val_type S ρ) ⊑ (val_type T ρ)) ->
                               forall{ρ γ}, 𝒞𝓉𝓍 Γ ρ γ ->
                                       exists v D, indexr x γ = Some v /\ indexr x ρ = Some D /\ ⦑ v , D ⦒ ⋵ (val_type T ρ).
-  intros Γ x T HT fstp ρ γ HC. remember (tvar (varF x)) as v.
+  intros Γ x T HT fstp ρ γ HC. remember (tvar $x) as v.
   induction HT; inversion Heqv; subst.
   - pose (HT' := H). apply indexr_var_some' in HT'. apply (lookup HC) in HT'. destruct HT'.
     destruct X. rewrite H in l_x_Γ_T0. inversion l_x_Γ_T0. exists l_v0. exists l_D0. intuition.
@@ -1320,7 +1328,7 @@ with
       specialize (IHHty1 _ _ HΓργ).
       destruct IHHty1 as [k1 [v1 [evalv1 [vs1 v1vs1inVtyT1T2 ]]]].
       destruct (@invert_var _ _ _ h2 fundamental_stp _ _ HΓργ) as [v2 [vs2 [xgv2 [xrvs2 v2vs2inVtyT1]]]].
-      assert (evalv2 : eval 1 γ (tvar (varF x)) = Done v2). {
+      assert (evalv2 : eval 1 γ $x = Done v2). {
         simpl. rewrite xgv2. auto.
       }
       unfold_val_type in v1vs1inVtyT1T2. destruct v1 as [ γ' T' t' | γ' T' ].
