@@ -142,14 +142,6 @@ Lemma indexr_insert_lt : forall {A} {xs xs' : list A} {x} {y}, x < (length xs') 
   lia. simpl. lia.
 Qed.
 
-Inductive vl : Type :=
-| vabs : list vl -> tm -> tm -> vl
-| vty  : list vl -> tm -> vl
-.
-
-Definition tenv := list tm. (* Γ environment: static *)
-Definition venv := list vl. (* H environment: run-time *)
-
 Fixpoint open_rec (k: nat) (u: tm) (T: tm) { struct T }: tm :=
   match T with
   | TTop            => TTop
@@ -296,6 +288,8 @@ Hint Constructors type : dsub.
 (*   rewrite open_path in H. auto. *)
 (* Qed. *)
 
+Definition tenv := list tm. (* Γ environment: static *)
+
 Inductive has_type : tenv -> tm -> tm -> Prop :=
 | t_var : forall Γ x T,
     indexr x Γ = Some T ->
@@ -320,10 +314,11 @@ Inductive has_type : tenv -> tm -> tm -> Prop :=
     has_type Γ t2 T1 ->
     has_type Γ (tapp t1 t2) T2
 
-| t_dapp : forall Γ t1 x T1 T2,
+| t_dapp : forall Γ t1 t2 T1 T2,
     has_type Γ t1 (TAll T1 T2) ->
-    has_type Γ $x T1 ->
-    has_type Γ (tapp t1 $x) (open $x T2)
+    has_type Γ t2 T1 ->
+    path t2 ->
+    has_type Γ (tapp t1 t2) (open t2 T2)
 
 | t_and : forall Γ x T1 T2,
     has_type Γ $x T1 ->
@@ -365,19 +360,20 @@ with
       stp Γ T1 T2 ->
       stp Γ (TMem S1 T1) (TMem S2 T2)
 
-  | stp_sel1 : forall Γ x T1 T,
-      indexr x Γ = Some T1 ->
-      stp Γ T1 (TMem T TTop) ->
-      stp Γ T (TSel $x)
+  | stp_sel1 : forall Γ t T,
+      has_type Γ t (TMem T TTop) ->
+      path t ->
+      stp Γ T (TSel t)
 
-  | stp_sel2 : forall Γ x T1 T,
-      indexr x Γ = Some T1 ->
-      stp Γ T1 (TMem TBot T) ->
-      stp Γ (TSel $x) T
+  | stp_sel2 : forall Γ t T,
+      has_type Γ t (TMem TBot T) ->
+      path t ->
+      stp Γ (TSel t) T
 
-  | stp_selx : forall Γ x T1 T2,
-      has_type Γ $x (TMem T1 T2) ->
-      stp Γ (TSel $x) (TSel $x)
+  | stp_selx : forall Γ t T1 T2,
+      has_type Γ t (TMem T1 T2) ->
+      path t ->
+      stp Γ (TSel t) (TSel t)
 
   | stp_all : forall Γ S1 S2 T1 T2,
       stp Γ S2 S1 ->
@@ -554,6 +550,13 @@ Lemma splice_varB_inv : forall {t n x}, splice n t = #x -> t = #x.
 Qed.
 
 (* ### Evaluation (Big-Step Semantics) ### *)
+
+Inductive vl : Type :=
+| vabs : list vl -> tm -> tm -> vl
+| vty  : list vl -> tm -> vl
+.
+
+Definition venv := list vl. (* H environment: run-time *)
 
 Inductive Result : Type :=
 | Done   : vl -> Result
