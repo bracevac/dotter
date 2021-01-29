@@ -11,7 +11,9 @@ Import ListNotations.
 
 Prove SN of a System D Calculus with general type selections using NbE, following
 
-Andreas Abel - Towards Normalization by Evaluation for the βη-Calculus of Constructions (FLOPS '10)
+    Andreas Abel - Towards Normalization by Evaluation for the βη-Calculus of Constructions (FLOPS '10)
+
+We model partial functions using the fuel-based interpreters from Amin & Rompf 2017.
 
 We omit intersection and self-recursive types for now.
 *)
@@ -248,7 +250,39 @@ Hint Constructors equal_tm : dsub.
 Hint Constructors equal_subst : dsub.
 Hint Constructors ctx_wf : dsub.
 
-(* TODO : syntax predicates for normal forms and neutral terms *)
+(* syntax predicates for normal forms and neutral terms *)
+Inductive Nf : tm -> Prop :=
+| Nf_TSort : forall (s : sort), Nf (TSort s)
+| Nf_TTop  : Nf TTop
+| Nf_TBot  : Nf TBot
+| Nf_TAll  : forall {T1 T2},
+    Nf T1 ->
+    Nf T2 ->
+    Nf (TAll T1 T2)
+| Nf_TMem : forall {T1 T2},
+    Nf T1 ->
+    Nf T2 ->
+    Nf (TMem T1 T2)
+| Nf_ttyp : forall {T}, (* TODO not sure if T needs to be normal*)
+    Nf T ->
+    Nf (ttyp T)
+| Nf_tabs : forall {T t},
+    Nf T ->
+    Nf t ->
+    Nf (tabs T t)
+| Nf_Ne : forall {t},
+    Ne t ->
+    Nf t
+with Ne : tm -> Prop :=
+| Ne_var : forall x, Ne #x
+| Ne_tapp : forall {t1 t2},
+    Ne t1 ->
+    Nf t2 ->
+    Ne (tapp t1 t2)
+| Ne_TSel : forall {t},
+    Ne t ->
+    Ne (TSel t)
+.
 
 Inductive Dom : Type :=
 | DSort : sort -> Dom
@@ -282,6 +316,7 @@ Arguments Done {T}.
 Arguments NoFuel {T}.
 Arguments Error {T}.
 
+(* normalization *)
 Fixpoint eval (fuel : nat) (γ : denv) (t : tm) : Result Dom :=
   match fuel with
   | 0   => NoFuel
@@ -385,3 +420,107 @@ with eval_sel (fuel : nat) (d : Dom) : Result Dom :=
     | _ => Error
     end
   end.
+
+(* readback *)
+Fixpoint reify (fuel lvl : nat) (d : Dom) : Result ({ t : tm | Nf t }) :=
+  match fuel with
+  | 0 => NoFuel
+  | S n =>
+    match d with
+    | DSort s => Done (exist _ _ (Nf_TSort s))
+    | DTop    => Done (exist _ _ Nf_TTop)
+    | DBot    => Done (exist _ _ Nf_TBot)
+    | DAll D1 D2 =>
+      match (reify n lvl D1) with
+      | Done (exist _ _ NfT1) =>
+        match (eval_app n D2 (Drefl D1 $lvl)) with
+        | Done   D2x =>
+          match (reify n (S lvl) D2x) with
+          | Done (exist _ _ NfT2) =>
+            Done (exist _ _ (Nf_TAll NfT1 NfT2))
+          | err => err
+          end
+        | NoFuel     => NoFuel
+        | Error      => Error
+        end
+      | err => err
+      end
+    | DMem D1 D2 =>
+      match (reify n lvl D1) with
+      | Done (exist _ _ NfT1) =>
+        match (reify n lvl D2) with
+        | Done (exist _ _ NfT2) =>
+          Done (exist _ _ (Nf_TMem NfT1 NfT2))
+        | err => err
+        end
+      | err => err
+      end
+    | Dtyp γ T =>
+      match (eval n γ T) with
+      | Done D =>
+        match (reify n lvl D) with
+        | Done (exist _ _ NfT) => Done (exist _ _ (Nf_ttyp NfT))
+        | err => err
+        end
+      | Error  => Error
+      | NoFuel => NoFuel
+      end
+    | DNe Dn =>
+      match (reify_ne n lvl Dn) with
+      | Done (exist _ _ NeN) => Done (exist _ _ (Nf_Ne NeN))
+      | Error => Error
+      | NoFuel => NoFuel
+      end
+    | _ => Error
+    end
+  end
+with
+reify_nf  (fuel lvl : nat) (d : DomNf) : Result ({ t : tm | Nf t }) :=
+  match fuel with
+  | 0 => NoFuel
+  | S n =>
+    match d with
+    | Dreif (DAll D1 D2) Df =>
+      match (reify n lvl D1) with
+      | Done (exist _ _ NfT1) =>
+        match (eval_app n D2 (Drefl D1 $lvl)) with
+        | Done   D2x =>
+          match (eval_app n Df (Drefl D1 $lvl)) with
+          | Done Dfx =>
+            match (reify_nf n (S lvl) (Dreif D2x Dfx)) with
+            | Done (exist _ _ Nft) =>
+              Done (exist _ _ (Nf_tabs NfT1 Nft))
+            | err => err
+            end
+          | NoFuel   => NoFuel
+          | Error    => Error
+          end
+        | NoFuel     => NoFuel
+        | Error      => Error
+        end
+      | err => err
+      end
+    | Dreif _ D => (reify n lvl D)
+    end
+  end
+with
+reify_ne  (fuel lvl : nat) (d : DomNe) : Result ({ t : tm | Ne t }) :=
+  match fuel with
+  | 0 => NoFuel
+  | S n =>
+      match d with
+      | $x => Done (exist _ _ (Ne_var (Nat.sub lvl (S x))))
+      | Dapp nd1 d2 =>
+        match (reify_ne n lvl nd1) with
+        | Done (exist _ _ Net1) =>
+          match (reify_nf n lvl d2) with
+          | Done (exist _ _ Nft2) => Done (exist _ _ (Ne_tapp Net1 Nft2))
+          | Error => Error
+          | NoFuel => NoFuel
+          end
+        | err => err
+        end
+      | DSel nd => Error
+      end
+  end
+.
