@@ -239,7 +239,9 @@ with stp : tenv -> tm -> tm -> Prop :=
     stp Γ S U
 
 with equal_tm : tenv -> tm -> tm -> tm -> Prop := (* TODO*)
-
+| eq_refl : forall Γ t T,
+    has_type Γ t T ->
+    equal_tm Γ t t T
 
 with equal_subst : tenv -> subst -> subst -> Prop := (* TODO*)
 .
@@ -316,7 +318,7 @@ Arguments Done {T}.
 Arguments NoFuel {T}.
 Arguments Error {T}.
 
-(* normalization *)
+(* evaluation *)
 Fixpoint eval (fuel : nat) (γ : denv) (t : tm) : Result Dom :=
   match fuel with
   | 0   => NoFuel
@@ -474,8 +476,7 @@ Fixpoint reify (fuel lvl : nat) (d : Dom) : Result ({ t : tm | Nf t }) :=
     | _ => Error
     end
   end
-with
-reify_nf  (fuel lvl : nat) (d : DomNf) : Result ({ t : tm | Nf t }) :=
+with reify_nf  (fuel lvl : nat) (d : DomNf) : Result ({ t : tm | Nf t }) :=
   match fuel with
   | 0 => NoFuel
   | S n =>
@@ -503,8 +504,7 @@ reify_nf  (fuel lvl : nat) (d : DomNf) : Result ({ t : tm | Nf t }) :=
     | Dreif _ D => (reify n lvl D)
     end
   end
-with
-reify_ne  (fuel lvl : nat) (d : DomNe) : Result ({ t : tm | Ne t }) :=
+with reify_ne  (fuel lvl : nat) (d : DomNe) : Result ({ t : tm | Ne t }) :=
   match fuel with
   | 0 => NoFuel
   | S n =>
@@ -522,5 +522,60 @@ reify_ne  (fuel lvl : nat) (d : DomNe) : Result ({ t : tm | Ne t }) :=
         end
       | DSel nd => Error
       end
-  end
-.
+  end.
+
+(* normalization *)
+Fixpoint eval_ctx (fuel : nat) (Γ : tenv) : Result denv :=
+  match fuel with
+  | 0 => NoFuel
+  | S n =>
+    match Γ with
+    | [] => Done []
+    | T :: Γ =>
+      match (eval_ctx n Γ) with
+      | Done γ =>
+        match (eval n γ T) with
+        | Done D => Done ((Drefl D $(length Γ)) :: γ)
+        | Error  => Error
+        | NoFuel => NoFuel
+        end
+      | err => err
+      end
+    end
+  end.
+
+(* TODO show length Γ = length (eval_ctx n Γ) for sufficient n *)
+
+(* term nbe *)
+Definition nbe (fuel : nat) (Γ : tenv) (T t : tm) : Result ({ t : tm | Nf t }) :=
+  match (eval_ctx fuel Γ) with
+  | Done γ =>
+    match (eval fuel γ T) with
+    | Done DT =>
+      match (eval fuel γ t) with
+      | Done Dt => reify_nf fuel (length Γ) (Dreif DT Dt)
+      | Error   => Error
+      | NoFuel  => NoFuel
+      end
+    | Error   => Error
+    | NoFuel  => NoFuel
+    end
+  | Error  => Error
+  | NoFuel => NoFuel
+  end.
+
+(* type nbe *)
+Definition Nbe (fuel : nat) (Γ : tenv) (T : tm) := nbe fuel Γ ◻ T.
+
+(* TODO determinism and monotonicity properties for all the partial functions in this file*)
+(* TODO it's high time we used monadic syntax and combinators for these *)
+
+Theorem completeness : forall {Γ t t' T}, equal_tm Γ t t' T -> exists n nft nft', nbe n Γ T t = nft /\ nbe n Γ T t' = nft' /\ nft = nft'.
+Admitted.
+
+Corollary strong_normalization : forall {Γ t T}, has_type Γ t T -> exists n nft, nbe n Γ T t = nft.
+  intros.
+  pose (Heq:= completeness (eq_refl _ _ _ H)).
+  destruct Heq as [n [nf [_ [norm  _]  ]]].
+  exists n. exists nf. assumption.
+Qed.
