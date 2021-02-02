@@ -24,12 +24,15 @@ Import ListNotations.
 (* ### Syntax ### *)
 
 Inductive Fin : nat -> Set :=
-| FZ : forall n, Fin (S n)
-| FS : forall n, Fin n -> Fin (S n)
+| FZ : forall {n}, Fin (S n)
+| FS : forall {n}, Fin n -> Fin (S n)
 .
 
 Notation var := Fin.
 
+Check ((fun (x : Fin 2) => x)  (FS FZ)).
+Check ((fun (x : Fin 2) => x)  FZ).
+Fail Check ((fun (x : Fin 2) => x)  (FS (FS FZ))).
 
 Fixpoint var0 {n : nat} : var (S n) :=
   match n with

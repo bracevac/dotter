@@ -1,11 +1,11 @@
 # DOTter
 
-(Mostly) Agda<sup>1</sup> developments and experiments on dependent object types (DOT) and related systems.
+(Mostly) Agda<sup>1</sup> and Coq developments and experiments on dependent object types (DOT) and related systems.
 
 ## Contents
 
-* `nbe/` Normalization by Evaluation (NbE) for a predicative System D calculus with
-full dependent types.
+* `nbe/` Normalization by Evaluation (NbE) for DOT/System D calculi with
+full(er) dependent types.
 
 * `logrel/` Strong normalization of DOT calculi using logical relations.
 

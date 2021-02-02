@@ -231,28 +231,25 @@ Lemma closed_monotone : forall {T b f}, closed b f T -> forall {b' f'}, b <= b' 
   intros T b f H. induction H; intuition.
 Qed.
 
-Lemma closed_open_id : forall {T b f}, closed b f T -> forall {n}, b <= n -> forall {t}, (open_rec n t T) = T.
-  intros T b f H. induction H; intros; simpl; auto;
-    try solve [erewrite IHclosed1; eauto; erewrite IHclosed2; eauto; lia | erewrite IHclosed; eauto; lia].
+Fixpoint closed_open_id {T b f} (H : closed b f T) : forall {n}, b <= n -> forall {t}, (open_rec n t T) = T.
+    destruct H; intros; simpl; auto;
+    try solve [repeat erewrite closed_open_id; eauto; lia].
     destruct (Nat.eqb n x) eqn:Heq; auto. apply beq_nat_true in Heq. lia.
 Qed.
 
-Lemma closed_open_front : forall {T b f}, closed (S b) f T -> forall {t b' f'}, closed b' f' t ->
-                    forall {b'' f''}, b <= b'' -> b' <= b'' -> f <= f'' -> f' <= f'' -> closed b'' f'' (open_rec b t T).
-  induction T; intros; simpl; intuition; inversion H; subst; try constructor;
-    try solve [eapply IHT1; eauto; lia
-              | eapply IHT2; eauto; lia; eapply closed_monotone; eauto
-              | eapply IHT; eauto; lia; eapply closed_monotone; eauto].
+Fixpoint closed_open_front {T : tm} :
+  forall { b f}, closed (S b) f T -> forall {t b' f'}, closed b' f' t ->
+            forall {b'' f''}, b <= b'' -> b' <= b'' -> f <= f'' -> f' <= f'' -> closed b'' f'' (open_rec b t T).
+  destruct T; intros; simpl; intuition; inversion H; subst; try constructor;
+    try solve [eapply closed_open_front; eauto; lia].
   destruct (Nat.eqb b x) eqn:Heq; intuition. eapply closed_monotone; eauto; lia.
   apply beq_nat_false in Heq. constructor. lia. lia.
 Qed.
 
-Lemma closed_open_middle : forall {T b f}, closed b f T -> forall {t b' f'}, closed b' f' t ->
+Fixpoint closed_open_middle {T} : forall {b f}, closed b f T -> forall {t b' f'}, closed b' f' t ->
                     forall {b'' f'' i}, i < b -> b <= b'' -> b' <= b'' -> f <= f'' -> f' <= f'' -> closed b'' f'' (open_rec i t T).
-  induction T; intros; simpl; intuition; inversion H; subst; try constructor;
-    try solve [eapply IHT1; eauto; lia
-              | eapply IHT2; eauto; lia; eapply closed_monotone; eauto
-              | eapply IHT; eauto; lia; eapply closed_monotone; eauto].
+  destruct T; intros; simpl; intuition; inversion H; subst; try constructor;
+    try solve [eapply closed_open_middle; eauto; lia].
   destruct (Nat.eqb i x) eqn:Heq; intuition. eapply closed_monotone; eauto; lia. lia.
 Qed.
 
@@ -493,15 +490,15 @@ Fixpoint splice (n : nat) (T : tm) {struct T} : tm :=
   | tunpack t1 t2  => tunpack (splice n t1) (splice n t2)
   end.
 
-Lemma splice_id : forall {T b f}, closed b f T -> (splice f T ) = T.
-  induction T; intros; inversion H; subst; simpl; auto;
-    try solve [erewrite IHT1; eauto; erewrite IHT2; eauto | erewrite IHT; eauto].
+Fixpoint splice_id {T} : forall {b f}, closed b f T -> (splice f T ) = T.
+  destruct T; intros; inversion H; subst; simpl; auto;
+    try solve [repeat erewrite splice_id; eauto].
     destruct (le_lt_dec f x) eqn:Heq. lia. auto.
 Qed.
 
-Lemma splice_open : forall {T j n m}, splice n (open_rec j $(m + n) T) = open_rec j $(S (m + n)) (splice n T).
-  induction T; intros; simpl; auto;
-    try solve [erewrite IHT1; eauto; erewrite IHT2; eauto | erewrite IHT; eauto].
+Fixpoint splice_open {T} : forall {j n m}, splice n (open_rec j $(m + n) T) = open_rec j $(S (m + n)) (splice n T).
+  destruct T; intros; simpl; auto;
+    try solve [repeat erewrite splice_open; eauto].
   destruct v; simpl. destruct (le_lt_dec n i) eqn:Heq; auto.
   destruct (Nat.eqb j i) eqn:Heq; auto.
   simpl. destruct (le_lt_dec n (m + n)) eqn:Heq'. auto. lia.
@@ -528,9 +525,9 @@ Lemma splice_closed' : forall {T b} {A} {D : A} {ρ ρ'},
   apply splice_closed. auto. simpl. rewrite app_length. simpl. lia.
 Qed.
 
-Lemma splice_open_succ : forall {T b n j}, closed b n T -> splice n (open_rec j $n T) = open_rec j $(S n) T.
-  induction T; simpl; intros; inversion H; subst; auto;
-    try solve [erewrite IHT1; eauto; erewrite IHT2; eauto | erewrite IHT; eauto].
+Fixpoint splice_open_succ {T} : forall {b n j}, closed b n T -> splice n (open_rec j $n T) = open_rec j $(S n) T.
+  destruct T; simpl; intros; inversion H; subst; auto;
+    try solve [repeat erewrite splice_open_succ; eauto].
   destruct (Nat.eqb j x) eqn:Heq; auto. simpl.
   destruct (le_lt_dec n n) eqn:Heq'; auto. lia.
   simpl. destruct (le_lt_dec n x) eqn:Heq; auto. lia.
@@ -816,6 +813,10 @@ Qed.
 
 (* Logical Relation *)
 
+Definition ℰ (D : Dom) (γ : venv) (t : tm) : Prop :=
+  exists k v, eval k γ t = Done v /\ exists vs, ⦑ v, vs ⦒ ⋵ D.
+Hint Unfold ℰ : dsub.
+
 (* well-founded relation which captures the recursive calls in the interpretation val_type. *)
 Inductive R : tm -> tm -> Prop :=
 | RAll1  : forall {T1 T2}, R T1 (TAll T1 T2)
@@ -846,9 +847,12 @@ Defined.
 
 Definition denv := list Dom.
 
-Definition ℰ (D : Dom) (γ : venv) (t : tm) : Prop :=
-  exists k v, eval k γ t = Done v /\ exists vs, ⦑ v, vs ⦒ ⋵ D.
-Hint Unfold ℰ : dsub.
+
+Inductive PResult : Type :=
+| PVal : Dom -> PResult
+| PFun : ()
+
+Fixpoint val_path_naked (p : tm) :
 
 Definition val_type_naked (T : tm) : (forall T', R T' T -> denv -> Dom) -> denv -> Dom :=
   match T with
