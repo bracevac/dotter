@@ -8,6 +8,6 @@ Go beyond Scala/DOT. Generalize from path-dependent to full dependent types.
   * NbE for deciding equality.
 
 ## Contents
-* 'impredicative/' : NbE for an impredicative System D variant in Coq.
-* 'predicative/' : NbE for an predicative System D variant in Agda. Currently abandoned.
-* 'scala/' : Scala implementation of NbE and bidirectional type checking.
+* `impredicative/` : NbE for an impredicative System D variant in Coq.
+* `predicative/` : NbE for an predicative System D variant in Agda. Currently abandoned.
+* `scala/` : Scala implementation of NbE and bidirectional type checking.
