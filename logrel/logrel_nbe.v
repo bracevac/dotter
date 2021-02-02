@@ -710,17 +710,53 @@ Definition skeleton_of (γ : kenv) (T : tm) : Knd :=
   | _          => ⋄
   end.
 
-(* TODO: Lemma 3,4 and Theorem 1 in Abel's paper *)
+(* TODO: Lemma 3, 4, and Theorem 1 in Abel's paper *)
+
+Require Import Coq.Relations.Relation_Definitions.
+
+Fixpoint Knd_interp (κ : Knd): Type :=
+  match κ with
+  | K_tm       =>  unit
+  | K_star     => relation (Dom * unit)
+  | K_fun κ1 κ2 => (Dom * (Knd_interp κ1)) -> Knd_interp κ2 (* TODO need partial function! *)
+  end.
+Notation "⟨ κ ⟩" := (Knd_interp κ) (at level 0) : dsub.
+
+(* TODO: set notation & prove these are PERs *)
+Definition 𝒩ℰ : relation DomNe :=
+  fun e e' => forall lvl, exists fuel, exists nf, reify_ne fuel lvl e = Done nf /\ reify_ne fuel lvl e' = Done nf.
+
+Definition 𝒩ℱ : relation DomNf :=
+  fun d d' => forall lvl, exists fuel, exists nf, reify_nf fuel lvl d = Done nf /\ reify_nf fuel lvl d' = Done nf.
+
+Fixpoint Knd_inhabitant (κ : Knd) : ⟨ κ ⟩ :=
+  match κ with
+  | K_tm       => tt
+  | K_star     => (fun x y => (* TODO nicify notation *)
+                    match x, y with
+                    | (DNe e, tt), (DNe e', tt) => 𝒩ℰ e e'
+                    | _, _ => False
+                    end)
+  | K_fun κ1 κ2 => fun _ => Knd_inhabitant κ2
+  end.
+Notation "⊥⟨ κ ⟩" := (Knd_inhabitant κ) (at level 0) : dsub.
+
+(* these should be PERs, which we'll have to verify externally ! *)
+Definition Knd_rel (κ : Knd): Type := relation (Dom * ⟨ κ ⟩).
+Notation "⟪ κ ⟫" := (Knd_rel κ) (at level 0) : dsub.
+
+(* TODO: extensional equality of κ inhabitants, indexed by ⟨ κ ⟩ *)
+
 
 (* Main result *)
-
-
-Theorem completeness : forall {Γ t t' T}, equal_tm Γ t t' T -> exists n nft nft', nbe n Γ T t = nft /\ nbe n Γ T t' = nft' /\ nft = nft'.
+Theorem completeness : forall {Γ t t' T}, equal_tm Γ t t' T -> exists n nft nft', nbe n Γ T t = Done nft /\ nbe n Γ T t' = Done nft' /\ nft = nft'.
 Admitted.
 
-Corollary strong_normalization : forall {Γ t T}, has_type Γ t T -> exists n nft, nbe n Γ T t = nft.
+Corollary strong_normalization : forall {Γ t T}, has_type Γ t T -> exists n nft, nbe n Γ T t = Done nft.
   intros.
   pose (Heq:= completeness (eq_refl _ _ _ H)).
   destruct Heq as [n [nf [_ [norm  _]  ]]].
   exists n. exists nf. assumption.
 Qed.
+
+(* TODO: consistency *)
