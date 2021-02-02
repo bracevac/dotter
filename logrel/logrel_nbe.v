@@ -305,7 +305,10 @@ with DomNe : Type :=
 .
 
 Notation "$ i" := (Dvar i) (at level 0) : dsub.
+Notation "↓⟨ D1 ⟩ D2" := (Dreif D1 D2) (at level 0) : dsub.
+Notation "↑⟨ D ⟩ ne" := (Drefl D ne) (at level 0) : dsub.
 Coercion DSort : sort >-> Dom.
+Coercion DNe : DomNe >-> Dom.
 
 Definition denv := list Dom.
 
@@ -406,7 +409,7 @@ with eval_app (fuel : nat) (d1 d2 : Dom) : Result Dom :=
     | Dabs γ' t => eval n (d2 :: γ') t
     | Drefl (DAll D1 D2) ne =>
       match eval_app n D2 d2 with
-      | Done D2d2 => Done (Drefl D2d2 (Dapp ne (Dreif D1 d2)))
+      | Done D2d2 => Done (↑⟨ D2d2 ⟩ (Dapp ne (↓⟨ D1 ⟩ d2)))
       | err       => err
       end
     | _         => Error
@@ -418,7 +421,7 @@ with eval_sel (fuel : nat) (d : Dom) : Result Dom :=
   | S n =>
     match d with
     | Dtyp γ T => eval n γ T
-    | Drefl (DMem D1 D2) ne => Done (Drefl ⋆ (DSel ne))
+    | Drefl (DMem D1 D2) ne => Done (↑⟨ ⋆ ⟩ (DSel ne))
     | _ => Error
     end
   end.
@@ -435,7 +438,7 @@ Fixpoint reify (fuel lvl : nat) (d : Dom) : Result ({ t : tm | Nf t }) :=
     | DAll D1 D2 =>
       match (reify n lvl D1) with
       | Done (exist _ _ NfT1) =>
-        match (eval_app n D2 (Drefl D1 $lvl)) with
+        match (eval_app n D2 (↑⟨ D1 ⟩ $lvl)) with
         | Done   D2x =>
           match (reify n (S lvl) D2x) with
           | Done (exist _ _ NfT2) =>
@@ -484,11 +487,11 @@ with reify_nf  (fuel lvl : nat) (d : DomNf) : Result ({ t : tm | Nf t }) :=
     | Dreif (DAll D1 D2) Df =>
       match (reify n lvl D1) with
       | Done (exist _ _ NfT1) =>
-        match (eval_app n D2 (Drefl D1 $lvl)) with
+        match (eval_app n D2 (↑⟨ D1 ⟩ $lvl)) with
         | Done   D2x =>
-          match (eval_app n Df (Drefl D1 $lvl)) with
+          match (eval_app n Df (↑⟨ D1 ⟩ $lvl)) with
           | Done Dfx =>
-            match (reify_nf n (S lvl) (Dreif D2x Dfx)) with
+            match (reify_nf n (S lvl) (↓⟨ D2x ⟩ Dfx)) with
             | Done (exist _ _ Nft) =>
               Done (exist _ _ (Nf_tabs NfT1 Nft))
             | err => err
@@ -535,7 +538,7 @@ Fixpoint eval_ctx (fuel : nat) (Γ : tenv) : Result denv :=
       match (eval_ctx n Γ) with
       | Done γ =>
         match (eval n γ T) with
-        | Done D => Done ((Drefl D $(length Γ)) :: γ)
+        | Done D => Done ((↑⟨ D ⟩ $(length Γ)) :: γ)
         | Error  => Error
         | NoFuel => NoFuel
         end
@@ -553,7 +556,7 @@ Definition nbe (fuel : nat) (Γ : tenv) (T t : tm) : Result ({ t : tm | Nf t }) 
     match (eval fuel γ T) with
     | Done DT =>
       match (eval fuel γ t) with
-      | Done Dt => reify_nf fuel (length Γ) (Dreif DT Dt)
+      | Done Dt => reify_nf fuel (length Γ) (↓⟨ DT ⟩ Dt)
       | Error   => Error
       | NoFuel  => NoFuel
       end
@@ -569,6 +572,148 @@ Definition Nbe (fuel : nat) (Γ : tenv) (T : tm) := nbe fuel Γ ◻ T.
 
 (* TODO determinism and monotonicity properties for all the partial functions in this file*)
 (* TODO it's high time we used monadic syntax and combinators for these *)
+
+(* Kind syntax. Term depenency is erased. *)
+Inductive Knd : Type :=
+| K_tm   : Knd
+| K_star : Knd
+| K_fun  : Knd -> Knd -> Knd
+.
+Notation "⋄" := K_tm : dsub.
+
+(* Abel defines SKnd and PSKnd as a grammar, to restrict the possible occurrences of SK_tm (⋄).
+   A literal translation turns out to be cumbersome to use. So we opt to have
+   two predicates on the Knd syntax instead: *)
+Inductive SKnd : Knd -> Type := (* simple kind *)
+| SK_tm : SKnd K_tm
+| SK_P  : forall {κ}, PSKnd κ -> SKnd κ
+with PSKnd : Knd -> Type :=     (* proper simple kinds *)
+| PSK_star : PSKnd K_star
+| PSK_fun  : forall {κ1 κ2},
+    SKnd κ1 -> PSKnd κ2 -> PSKnd (K_fun κ1 κ2)
+.
+
+(* simple kinding environment *)
+Definition kenv := list Knd.
+
+(* assign the simple/erased kind to kind expressions  *)
+(* TODO: need to include type selections? *)
+Inductive has_skind : kenv -> tm -> Knd -> Prop :=
+| k_tvar : forall γ κ, has_skind (κ :: γ) #0 κ
+| k_tabs : forall γ T1 κ1 T2 κ2,
+    has_skeleton γ T1 κ1 ->
+    has_skind (κ1 :: γ) T2 κ2 ->
+    has_skind γ (tabs T1 T2) (K_fun κ1 κ2)
+| k_tapp : forall γ T1 κ1 T2 κ2,
+    has_skind γ T1 (K_fun κ1 κ2) ->
+    has_skind γ T2 κ1 ->
+    has_skind γ (tapp T1 T2) κ2
+| k_tsubst : forall γ σ δ T κ,
+    subst_skind γ σ δ ->
+    has_skind δ T κ ->
+    has_skind γ (tsubst T σ) κ
+with subst_skind : kenv -> subst -> kenv -> Prop :=
+| sk_sid : forall γ, subst_skind γ sid γ
+| sk_sweak : forall γ κ, subst_skind (κ :: γ) sweak γ
+| sk_sext : forall γ σ δ T κ,
+    subst_skind γ σ δ ->
+    has_skind γ T κ ->
+    subst_skind γ (sext σ T) (κ :: δ)
+| sk_scomp : forall γ τ δ σ υ,
+    subst_skind γ τ δ ->
+    subst_skind δ σ υ ->
+    subst_skind γ (scomp σ τ) υ
+with has_skeleton : kenv -> tm -> Knd -> Prop := (* replaces the term-dependency by ⋄ *)
+| sk_star : forall γ, has_skeleton γ ⋆ K_star
+| sk_tm :   forall γ T,
+    has_skind γ T K_star ->
+    has_skeleton γ T ⋄
+| sk_TAll : forall γ T1 κ1 T2 κ2,
+    has_skeleton γ T1 κ1 ->
+    has_skeleton (κ1 :: γ) T2 κ2 ->
+    has_skeleton γ (TAll T1 T2) (K_fun κ1 κ2)
+| sk_tsubst : forall γ σ δ T κ,
+    subst_skind γ σ δ ->
+    has_skeleton δ T κ ->
+    has_skeleton γ (tsubst T σ) κ
+.
+
+(* TODO prove that under well-formed kinding context γ, the above judgments classify terms with a κ such that SKnd κ *)
+
+Inductive Klass : Type :=
+| Kind : Klass
+| Skel : Klass
+.
+
+Fixpoint shape (γ : kenv) (T : tm) {struct T} : (Knd * Klass) :=
+  match T with
+  | ⋆ => (K_star, Skel)
+  | TAll T1 T2 =>
+    let κ1 := match (shape γ T1) with
+             | (κ , Skel) => κ
+             | _          => ⋄
+             end
+    in let κ2 := match shape (κ1 :: γ) T2 with
+                | (κ , Skel) => κ
+                | _          => ⋄
+                end
+       in (K_fun κ1 κ2, Skel)
+  (* | TSel x => _ *)
+  (* | TMem x x0 => _ *)
+  | tsubst T σ => shape (subst_kind γ σ) T
+  | #0 => match γ with
+         | []     => (⋄, Kind)
+         | κ :: _ => (κ, Kind)
+         end
+  (* | ttyp x => _ *)
+  | tabs T1 T2 =>
+    let κ1 := match (shape γ T1) with
+             | (κ , Skel) => κ
+             | _          => ⋄
+             end
+    in let κ2 := match shape (κ1 :: γ) T2 with
+                | (κ , Kind) => κ
+                |  _         => K_star
+                end
+       in (K_fun κ1 κ2, Kind)
+  | tapp T1 T2 => match (shape γ T1) with
+                 | ((K_fun _ κ) , Kind) => (κ, Kind)
+                 |  _                   => (⋄, Kind)
+                 end
+  | _ => (⋄, Kind) (* TODO might need to have proper partial function *)
+  end
+with subst_kind (γ : kenv) (σ : subst) : kenv :=
+       match σ with
+       | sid => γ
+       | sweak => match γ with
+                 | []      => []
+                 | _ :: γ' => γ'
+                 end
+       | scomp σ τ => subst_kind (subst_kind γ τ) σ
+       | sext σ t  =>
+         let κ := match (shape γ t) with
+                 | (κ , Skel) => κ
+                 | _          => ⋄
+                 end
+         in κ :: (subst_kind γ σ)
+       end
+.
+
+Definition kind_of (γ : kenv) (T : tm) : Knd :=
+  match shape γ T with
+  | (κ , Kind) => κ
+  |  _         => K_star
+  end.
+Definition skeleton_of (γ : kenv) (T : tm) : Knd :=
+  match shape γ T with
+  | (κ , Skel) => κ
+  | _          => ⋄
+  end.
+
+(* TODO: Lemma 3,4 and Theorem 1 in Abel's paper *)
+
+(* Main result *)
+
 
 Theorem completeness : forall {Γ t t' T}, equal_tm Γ t t' T -> exists n nft nft', nbe n Γ T t = nft /\ nbe n Γ T t' = nft' /\ nft = nft'.
 Admitted.
