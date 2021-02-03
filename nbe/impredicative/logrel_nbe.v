@@ -573,13 +573,14 @@ Definition Nbe (fuel : nat) (Γ : tenv) (T : tm) := nbe fuel Γ ◻ T.
 (* TODO determinism and monotonicity properties for all the partial functions in this file*)
 (* TODO it's high time we used monadic syntax and combinators for these *)
 
-(* Kind syntax. Term depenency is erased. *)
+(* Kind syntax. Term dependency is erased. *)
 Inductive Knd : Type :=
 | K_tm   : Knd
 | K_star : Knd
 | K_fun  : Knd -> Knd -> Knd
 .
 Notation "⋄" := K_tm : dsub.
+Notation "κ1 ⇒ κ2" := (K_fun κ1 κ2) (at level 0, right associativity) : dsub.
 
 (* Abel defines SKnd and PSKnd as a grammar, to restrict the possible occurrences of SK_tm (⋄).
    A literal translation turns out to be cumbersome to use. So we opt to have
@@ -590,7 +591,7 @@ Inductive SKnd : Knd -> Type := (* simple kind *)
 with PSKnd : Knd -> Type :=     (* proper simple kinds *)
 | PSK_star : PSKnd K_star
 | PSK_fun  : forall {κ1 κ2},
-    SKnd κ1 -> PSKnd κ2 -> PSKnd (K_fun κ1 κ2)
+    SKnd κ1 -> PSKnd κ2 -> PSKnd (κ1 ⇒ κ2)
 .
 
 (* simple kinding environment *)
@@ -603,9 +604,9 @@ Inductive has_skind : kenv -> tm -> Knd -> Prop :=
 | k_tabs : forall γ T1 κ1 T2 κ2,
     has_skeleton γ T1 κ1 ->
     has_skind (κ1 :: γ) T2 κ2 ->
-    has_skind γ (tabs T1 T2) (K_fun κ1 κ2)
+    has_skind γ (tabs T1 T2) (κ1 ⇒ κ2)
 | k_tapp : forall γ T1 κ1 T2 κ2,
-    has_skind γ T1 (K_fun κ1 κ2) ->
+    has_skind γ T1 (κ1 ⇒ κ2) ->
     has_skind γ T2 κ1 ->
     has_skind γ (tapp T1 T2) κ2
 | k_tsubst : forall γ σ δ T κ,
@@ -631,7 +632,7 @@ with has_skeleton : kenv -> tm -> Knd -> Prop := (* replaces the term-dependency
 | sk_TAll : forall γ T1 κ1 T2 κ2,
     has_skeleton γ T1 κ1 ->
     has_skeleton (κ1 :: γ) T2 κ2 ->
-    has_skeleton γ (TAll T1 T2) (K_fun κ1 κ2)
+    has_skeleton γ (TAll T1 T2) (κ1 ⇒ κ2)
 | sk_tsubst : forall γ σ δ T κ,
     subst_skind γ σ δ ->
     has_skeleton δ T κ ->
@@ -657,7 +658,7 @@ Fixpoint shape (γ : kenv) (T : tm) {struct T} : (Knd * Klass) :=
                 | (κ , Skel) => κ
                 | _          => ⋄
                 end
-       in (K_fun κ1 κ2, Skel)
+       in (κ1 ⇒ κ2, Skel)
   (* | TSel x => _ *)
   (* | TMem x x0 => _ *)
   | tsubst T σ => shape (subst_kind γ σ) T
@@ -675,7 +676,7 @@ Fixpoint shape (γ : kenv) (T : tm) {struct T} : (Knd * Klass) :=
                 | (κ , Kind) => κ
                 |  _         => K_star
                 end
-       in (K_fun κ1 κ2, Kind)
+       in (κ1 ⇒ κ2, Kind)
   | tapp T1 T2 => match (shape γ T1) with
                  | ((K_fun _ κ) , Kind) => (κ, Kind)
                  |  _                   => (⋄, Kind)
@@ -735,17 +736,37 @@ Fixpoint Knd_inhabitant (κ : Knd) : ⟨ κ ⟩ :=
   | K_star     => (fun x y => (* TODO nicify notation *)
                     match x, y with
                     | (DNe e, tt), (DNe e', tt) => 𝒩ℰ e e'
-                    | _, _ => False
+                    | _          , _            => False
                     end)
   | K_fun κ1 κ2 => fun _ => Knd_inhabitant κ2
   end.
 Notation "⊥⟨ κ ⟩" := (Knd_inhabitant κ) (at level 0) : dsub.
 
 (* these should be PERs, which we'll have to verify externally ! *)
-Definition Knd_rel (κ : Knd): Type := relation (Dom * ⟨ κ ⟩).
-Notation "⟪ κ ⟫" := (Knd_rel κ) (at level 0) : dsub.
+Notation "⟪ κ ⟫" := (relation (Dom * ⟨ κ ⟩)) (at level 0) : dsub.
 
 (* TODO: extensional equality of κ inhabitants, indexed by ⟨ κ ⟩ *)
+
+Inductive rel_elem {A} (a : A) (R : relation A): Prop :=
+| meml : forall {b}, R a b -> rel_elem a R
+| memr : forall {b}, R b a -> rel_elem a R
+.
+Arguments meml {A} {a} {R} {b}.
+Arguments memr {A} {a} {R} {b}.
+Notation "a ⋵ R" := (rel_elem a R) (at level 0) : dsub.
+Notation "a == b ∈ R" := (R a b) (at level 0) : dsub.
+
+Definition Π (κ1 κ2 : Knd) (𝒦1 : ⟪ κ1 ⟫) (𝒦2 : forall {x}, x ⋵ 𝒦1 -> ⟪ κ2 ⟫): ⟪ κ1 ⇒ κ2 ⟫ :=
+  fun X Y =>
+    match X, Y with
+    | (F, ℱ), (F', ℱ') =>
+      forall A B 𝒜 ℬ, forall (p : (A, 𝒜) == (B, ℬ) ∈ 𝒦1),
+          exists fuel FA F'B, eval_app fuel F A = Done FA /\ eval_app fuel F' B = Done F'B ->
+                              (FA, ℱ (A, 𝒜)) == (F'B, ℱ'(B, ℬ)) ∈ (𝒦2 (meml p))
+
+    end.
+(* TODO show that Π is closed under the PER property *)
+
 
 
 (* Main result *)
