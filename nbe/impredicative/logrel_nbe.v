@@ -286,6 +286,7 @@ with Ne : tm -> Prop :=
     Ne (TSel t)
 .
 
+(* Semantic normal forms of NbE*)
 Inductive Dom : Type :=
 | DSort : sort -> Dom
 | DTop  : Dom
@@ -580,6 +581,7 @@ Inductive Knd : Type :=
 | K_fun  : Knd -> Knd -> Knd
 .
 Notation "⋄" := K_tm : dsub.
+Notation "∗" := K_star : dsub.
 Notation "κ1 ⇒ κ2" := (K_fun κ1 κ2) (at level 0, right associativity) : dsub.
 
 (* Abel defines SKnd and PSKnd as a grammar, to restrict the possible occurrences of SK_tm (⋄).
@@ -648,7 +650,7 @@ Inductive Klass : Type :=
 
 Fixpoint shape (γ : kenv) (T : tm) {struct T} : (Knd * Klass) :=
   match T with
-  | ⋆ => (K_star, Skel)
+  | ⋆ => (∗, Skel)
   | TAll T1 T2 =>
     let κ1 := match (shape γ T1) with
              | (κ , Skel) => κ
@@ -674,7 +676,7 @@ Fixpoint shape (γ : kenv) (T : tm) {struct T} : (Knd * Klass) :=
              end
     in let κ2 := match shape (κ1 :: γ) T2 with
                 | (κ , Kind) => κ
-                |  _         => K_star
+                |  _         => ∗
                 end
        in (κ1 ⇒ κ2, Kind)
   | tapp T1 T2 => match (shape γ T1) with
@@ -703,7 +705,7 @@ with subst_kind (γ : kenv) (σ : subst) : kenv :=
 Definition kind_of (γ : kenv) (T : tm) : Knd :=
   match shape γ T with
   | (κ , Kind) => κ
-  |  _         => K_star
+  |  _         => ∗
   end.
 Definition skeleton_of (γ : kenv) (T : tm) : Knd :=
   match shape γ T with
@@ -717,9 +719,9 @@ Require Import Coq.Relations.Relation_Definitions.
 
 Fixpoint Knd_interp (κ : Knd): Type :=
   match κ with
-  | K_tm       =>  unit
-  | K_star     => relation (Dom * unit)
-  | K_fun κ1 κ2 => (Dom * (Knd_interp κ1)) -> Knd_interp κ2 (* TODO need partial function! *)
+  | ⋄       => unit
+  | ∗       => relation (Dom * unit)
+  | κ1 ⇒ κ2 => (Dom * (Knd_interp κ1)) -> Knd_interp κ2 (* TODO need partial function! *)
   end.
 Notation "⟨ κ ⟩" := (Knd_interp κ) (at level 0) : dsub.
 
@@ -732,18 +734,20 @@ Definition 𝒩ℱ : relation DomNf :=
 
 Fixpoint Knd_inhabitant (κ : Knd) : ⟨ κ ⟩ :=
   match κ with
-  | K_tm       => tt
-  | K_star     => (fun x y => (* TODO nicify notation *)
+  | ⋄          => tt
+  | ∗          => (fun x y => (* TODO nicify notation *)
                     match x, y with
                     | (DNe e, tt), (DNe e', tt) => 𝒩ℰ e e'
                     | _          , _            => False
                     end)
-  | K_fun κ1 κ2 => fun _ => Knd_inhabitant κ2
+  | κ1 ⇒ κ2   => fun _ => Knd_inhabitant κ2
   end.
 Notation "⊥⟨ κ ⟩" := (Knd_inhabitant κ) (at level 0) : dsub.
 
 (* these should be PERs, which we'll have to verify externally ! *)
 Notation "⟪ κ ⟫" := (relation (Dom * ⟨ κ ⟩)) (at level 0) : dsub.
+
+Lemma term_star_coincides : ⟪ ⋄ ⟫ = ⟨ ∗ ⟩. auto. Qed.
 
 (* TODO: extensional equality of κ inhabitants, indexed by ⟨ κ ⟩ *)
 
@@ -753,8 +757,9 @@ Inductive rel_elem {A} (a : A) (R : relation A): Prop :=
 .
 Arguments meml {A} {a} {R} {b}.
 Arguments memr {A} {a} {R} {b}.
-Notation "a ⋵ R" := (rel_elem a R) (at level 0) : dsub.
-Notation "a == b ∈ R" := (R a b) (at level 0) : dsub.
+Notation "a ⋵ R"      := (rel_elem a R)           (at level 0) : dsub.
+Notation "a == b ∈ R" := (R a b)                  (at level 0, only parsing) : dsub.
+Notation "R1 ⊑ R2"    := (forall x y, R1 x y -> R2 x y) (at level 0) : dsub.
 
 Definition Π (κ1 κ2 : Knd) (𝒦1 : ⟪ κ1 ⟫) (𝒦2 : forall {x}, x ⋵ 𝒦1 -> ⟪ κ2 ⟫): ⟪ κ1 ⇒ κ2 ⟫ :=
   fun X Y =>
@@ -766,6 +771,92 @@ Definition Π (κ1 κ2 : Knd) (𝒦1 : ⟪ κ1 ⟫) (𝒦2 : forall {x}, x ⋵ �
 
     end.
 (* TODO show that Π is closed under the PER property *)
+
+(* A (potentially major?) pain point:
+
+   Abel's paper stipulates that simple kinds of the form κ ⇒ ⋄ should be treated as ⋄. The
+   justification being that the former is a "subset" of the latter.
+   This would complicate all our definitions indexed by a simple kind/skeleton syntax.
+
+   Consider the particular instantiation of Π which models impredicative universal quantification:
+*)
+Check (Π ∗ ⋄).           (* forall 𝒦1 : ⟪ ∗ ⟫, (forall x : Dom * ⟨ ∗ ⟩, (x) ⋵ (𝒦1) -> ⟪ ⋄ ⟫) -> ⟪ ∗ ⇒ ⋄ ⟫ *)
+(* This works as expected only if we treat ∗ ⇒ ⋄ = ⋄. Then the type becomes
+
+       forall 𝒦1 : ⟪ ∗ ⟫, (forall x : Dom * ⟨ ∗ ⟩, (x) ⋵ (𝒦1) -> ⟪ ⋄ ⟫) -> ⟪ ⋄ ⟫
+
+   which is identical to
+
+       forall 𝒦1 : ⟪ ∗ ⟫, (forall x : Dom * ⟨ ∗ ⟩, (x) ⋵ (𝒦1) -> ⟨ ∗ ⟩) -> ⟨ ∗ ⟩    (by ⟪ ⋄ ⟫ = ⟨ ∗ ⟩)
+
+   Let's compare ⟪ ⋄ ⟫ and ⟪ ∗ ⇒ ⋄ ⟫:
+ *)
+Eval red in ⟪ ⋄ ⟫.     (* Dom * ⟨ ⋄ ⟩     -> Dom * ⟨ ⋄ ⟩      -> Prop *)
+Eval red in ⟪ ∗ ⇒ ⋄ ⟫. (* Dom * ⟨ ∗ ⇒ ⋄ ⟩ -> Dom * ⟨ ∗ ⇒ ⋄ ⟩ -> Prop *)
+(*
+   ⟨ ⋄ ⟩ and ⟨ ∗ ⇒ ⋄ ⟩ are different beasts:
+*)
+Eval red in ⟨ ⋄ ⟩.     (* unit *)
+Eval red in ⟨ ∗ ⇒ ⋄ ⟩. (* Dom * relation (Dom * unit) -> unit *)
+(*
+   Options are :
+   1) Literally enforce ∗ ⇒ ⋄ = ⋄ in the ⟨ _ ⟩ and ⟪ _ ⟫ definitions by pattern matching.
+      However, that makes Coq's automagical type checking machinery stumble,
+      and snowballs into most of the kind-indexed definitions.
+      These need to be rewritten using refine, producing more complicated and less legible terms.
+
+   2) Explicitly transform ⟪ κ ⇒ ⋄ ⟫ into ⟪ ⋄ ⟫ by replacing the attached
+      semantic operators of type ⟨ κ ⇒ ⋄ ⟩ with unit values. Expect some pollution of the kind-indexed
+      definitions, unclear to what extent. Probably less impactful if we have an implicit
+      coercion.
+
+   3) Have several specialized versions of Π for different kind pairs and in other places where
+      ∗ ⇒ ⋄ = ⋄ has an impact.
+*)
+
+
+(** Towards PER semantics for abstract types
+
+Musings:
+
+    Γ ⊢ T : ⋆                --> (nbe T, ⟦ T ⟧) == (nbe T, ⟦ T ⟧) ∈ ⟦ ⋆ ⟧ : ⟪ ⋆ ⟫ = PER Dom×(PER Dom×())  (IH)
+    ------------------------
+    Γ ⊢ <type T> : TMem T T  --> (type T, ()) == (type T, ()) ∈ [[ TMem T T ]] : ⟨ ⋆ ⟩ = PER Dom×()      (goal)
+
+The IH above is interesting, since we get the normal form of the type T with its semantic role, similar
+to the ECOOP development. We lose this information in the conclusion, because the "type T" term is not
+supposed to have a "semantic role" in Abel's terminology. It should hopefully be possible to design
+[[ TMem T T ]] in a way that we could recover this pairing. There seems to be a connection to
+Geuver's 1994 work, where he enriches the semantics for existentials/sigmas
+so that all interpretations are metalanguage functions accepting the witness of an existential
+(kind of like a state monad).
+
+
+Consider the proposed formation rule for type selection:
+
+    Γ ⊢ t : TMem T U --> (nbe t, ()) == (nbe t, ()) ∈ [[ TMem T U ]]: ⟨ ⋆ ⟩ = PER Dom×()                  (IH)
+    ----------------
+    Γ ⊢ t.Type : ⋆   --> (nbe t.Type, [[ t.Type ]])^2 ∈ [[ ⋆ ]] : ⟪ ⋆ ⟫ = PER Dom×(PER Dom×())          (goal)
+
+Again, [[ TMem T U ]] must provide enough information to recover the pairing of nbe t with
+its semantic type [[ t.Type ]].
+
+Definition 𝒯𝒮ℯ𝓁 (𝓉 : ⟪ ⋄ ⟫): ⟪ ∗ ⟫
+
+   input:  PER (Dom × < ⋄ >) == PER (Dom × ())
+   output: PER (Dom × < ∗ >) == PER (Dom × (PER Dom × ()))
+
+   {{ (D1, 𝒟1) , (D2, 𝒟2) |    }}
+ *)
+
+Definition 𝒯ℳℯ𝓂 (𝒯1 𝒯2 : ⟪ ∗ ⟫): ⟪ ∗ ⟫ :=
+  fun X Y =>
+    match X, Y with
+    | (d1, 𝒟1), (d2, 𝒟2) => (* TODO: does it make a difference if we swap the existential quantifiers? *)
+      exists fuel D1 D2, eval_sel fuel d1 = Done D1 /\ eval_sel fuel d2 = Done D2 /\
+                    exists (𝒳 : ⟪ ∗ ⟫), 𝒯1 ⊑ 𝒳 /\ 𝒳 ⊑ 𝒯2 /\ (D1, 𝒟1) == (D2, 𝒟2) ∈ 𝒳
+    end.
+(* TODO alternative would be to let 𝒳 be a function kind ∗ ⇒ ∗, like a Σ-type, and plug in the witnesses. *)
 
 
 
