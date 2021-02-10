@@ -814,7 +814,6 @@ Eval red in ⟨ ∗ ⇒ ⋄ ⟩. (* Dom * relation (Dom * unit) -> unit *)
       ∗ ⇒ ⋄ = ⋄ has an impact.
 *)
 
-
 (** Towards PER semantics for abstract types
 
 Musings:
@@ -840,6 +839,84 @@ Consider the proposed formation rule for type selection:
 
 Again, [[ TMem T U ]] must provide enough information to recover the pairing of nbe t with
 its semantic type [[ t.Type ]].
+
+Subtyping rules:
+
+The fundamental lemma for subtyping should have the obvious subset inclusion interpretations.
+Experimenting with the ECOOP paper's proofs, it turned out that it was difficult
+to have the fundamental lemma satisfy all the subtyping rules on type selections and
+dependent function types simultaneously. So far we only know that the proof goes through
+with the peculiar choice of a number-indexed semantic domain pairing values and sets.
+The pairing of semantic normal forms with their semantic role in Abel's nbe development
+serves a very similar function, but does not require the number index (I am hesitant to call
+it a step index, since it is not an approximation of evaluation steps).
+
+Consider subtyping of abstract types:
+
+     stp_sel1 : forall Γ t T,
+        has_type Γ t (TMem T TTop)  --> (nbe t, ()) == (nbe t, ()) ∈ [[TMem T TTop]] :  ⟨ ⋆ ⟩ = PER Dom×() (IH)
+        ---------------------------
+        stp Γ T (TSel t)            --> [[T]] ⊆ [[TSel t]]
+
+     stp_sel2 : forall Γ t T,
+        has_type Γ t (TMem TBot T)  --> (nbe t, ()) == (nbe t, ()) ∈ [[TMem TBot T]] :  ⟨ ⋆ ⟩ = PER Dom×() (IH)
+        --------------------------
+        stp Γ (TSel t) T            --> [[TSel t]] ⊆ [[T]]
+
+     stp_selx : forall Γ t T1 T2,
+        has_type Γ t (TMem T1 T2)
+        -------------------------
+        stp Γ (TSel t) (TSel t)     --> [[TSel t]] ⊆ [[TSel t]] trivial
+
+
+Existential types:
+
+Intuitively, we could consider that <type T> values are packages of type ∃x:⋆,Unit.
+
+Formation
+
+    Γ ⊢ κ : ◻                    --> (nbe κ, [[κ]]) == (nbe κ, [[κ]]) ∈ eq(|κ|) : Per D×⟨ |κ| ⟩
+    Γ, x:κ ⊢ T : ⋆               --> (nbe T, [[T]] == (nbe T, [[T]]) ∈ [[ ⋆ ]] : ⟪ ⋆ ⟫ = PER Dom×(PER Dom×())
+    ---------------------------
+    Γ ⊢ ∃x:κ.T : ⋆               --> (nbe ∃x:κ.T, [[∃x:κ.T]]) == (nbe ∃x:κ.T, [[∃x:κ.T]]) ∈ [[ ⋆ ]]
+
+Intro
+
+   Γ ⊢ T : κ                     --> (nbe T, [[T]]) == (nbe T, [[T]]) ∈ [[ κ ]] : Per D×⟨ κ ⟩
+   Γ,x:κ ⊢ t : U                 --> (nbe t, ())    == (nbe t, ())    ∈ [[ U ]] : PER Dom×()
+   ---------------------------
+   Γ ⊢ pack (T,t) : ∃x:κ.T       --> (nbe pack (T,t), ()) == (nbe pack (T,t), ()) ∈ [[ ∃x:κ.T ]] : PER Dom×()
+
+Elim
+
+   Γ ⊢ t1 : ∃x:κ.T                  --> (nbe t1, ()) == (nbe t1, ()) ∈ [[ ∃x:κ.T ]] : PER Dom×()
+   Γ,x:κ,y:T ⊢ t2 : U               --> (nbe t2, ()) == (nbe t2, ()) ∈ [[ U ]]      : Per Dom×()
+   ------------------------------
+   Γ ⊢ unpack t1 as (x,y) in t2 : U --> (nbe unpack .., ())^2 ∈ [[ U ]]
+
+
+Any particular conditions on U? if existentials are weak, then x,y cannot occur in U, e.g. Γ ⊢ U : ⋆
+Considering that we could express first projection of the type as (unpack t1 as (x,_) in x : ⋆),
+thus having an analogue for type selection, we then realize that U should be
+at the kind level, i.e., Γ ⊢ U : ◻, resp. specialized to ⋆. Thus, we have another eliminator
+at the type level:
+
+   Γ ⊢ t1 : ∃x:κ.T                  --> (nbe t1, ()) == (nbe t1, ()) ∈ [[ ∃x:κ.T ]] : PER Dom×()
+   --------------------------------
+   Γ ⊢ unpack t1 as (x,y) in x : κ  --> (nbe unpack t1 ..., [[unpack ... ]]) == (nbe t1, [[unpack ... ]]) ∈ [[ |κ| ]] : PER Dom×⟨ |κ| ⟩
+
+which leads to no ambiguity. We could hence stipulate t.type := unpack t1 as (x,y) in x as derived syntax.
+This also shows that we have to assign different semantics to these projections.
+
+[[ ∃x:κ.T ]] : PER Dom×() =  ρ => {{ (d1, ()), (d2, ()) |         }}
+
+[[ t.type ]] : PER Dom×⟨ |κ| ⟩
+
+e.g. [[ t.type ]] : PER Dom×⟨ ⋆ ⟩ = PER Dom×(PER Dom×())
+
+Another important remaining question is if the type-level projection above is already sufficient
+to make the system inconsistent, or whether inconsistency only occurs if the strong second projection
+is added. I.e., when do we cross the red line into inconsistency territory?
 
 Definition 𝒯𝒮ℯ𝓁 (𝓉 : ⟪ ⋄ ⟫): ⟪ ∗ ⟫
 
