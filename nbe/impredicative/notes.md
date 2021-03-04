@@ -35,7 +35,8 @@ models need to treat objects of different (metalanguage) types uniformly.
 
 ## DOT Rules for Abstract Types
 
-If we follow Abel's FLOPS paper, how would the fundamental lemma proofs work out?
+If we follow Abel's FLOPS paper, what would be the assumptions and
+proof obligations in the fundamental lemma?
 
 ### Introduction
 
@@ -55,7 +56,7 @@ so that all interpretations are metalanguage functions accepting the witness of 
 
 Consider the proposed formation rule for type selection:
 
-    Γ ⊢ t : TMem T U --> (nbe t, ()) == (nbe t, ()) ∈ ⟦ TMem T U ⟧: ⟨ ⋆ ⟩ = PER Dom×()                  (IH)
+    Γ ⊢ t : TMem T U --> (nbe t, ()) == (nbe t, ()) ∈ ⟦ TMem T U ⟧: ⟨ ⋆ ⟩ = PER Dom×()                 (IH)
     ----------------
     Γ ⊢ t.Type : ⋆   --> (nbe t.Type, ⟦ t.Type ⟧)^2 ∈ ⟦ ⋆ ⟧ : ⟪ ⋆ ⟫ = PER Dom×(PER Dom×())          (goal)
 
@@ -121,7 +122,7 @@ Here is the definition from our Coq file:
 			  ∃ fuel FA F'B, eval_app fuel F A = Done FA /\ eval_app fuel F' B = Done F'B ->
 								  (FA, ℱ (A, 𝒜)) == (F'B, ℱ'(B, ℬ)) ∈ (𝒦2 (meml p)) }}.
 
-This is going to be useful in the context of existentials later on in this file.
+This is going to be useful in the context of existentials later on.
 
 A (potentially major?) pain point: Abel's paper stipulates that simple
 kinds of the form κ ⇒ ⋄ should be treated as ⋄ (which marks an erased term dependency).
@@ -154,6 +155,8 @@ We can justify that ∗ ⇒ ⋄ and ⋄ are "the same", since the former describ
 unit-returning functions.
 This phenomenon is a consequence of impredicativity and has also been discussed
 in detail in: Miquel and Werner - The not so simple proof-irrelevant model of CC.
+They argue that any kind of model for impredicative CoC-like systems will exhibit
+this issue.
 
 ## Existential Types
 
@@ -180,7 +183,7 @@ The above rule seems uncontroversial, as long as we can appropriately define ⟦
 ### Introduction
 
     Γ ⊢ T : κ                     --> (nbe T, ⟦T⟧) == (nbe T, ⟦T⟧) ∈ ⟦ |κ| ⟧ : Per D×⟨ |κ| ⟩
-    Γ,x:κ ⊢ t : T                 --> (nbe t, ())  == (nbe t, ())    ∈ ⟦ U ⟧ : PER Dom×()
+    Γ,x:κ ⊢ t : T                 --> (nbe t, ())  == (nbe t, ())  ∈ ⟦ U ⟧   : PER Dom×()
     ---------------------------
     Γ ⊢ pack (T,t) : ∃x:κ.T       --> (nbe pack (T,t), ()) == (nbe pack (T,t), ()) ∈ ⟦ ∃x:κ.T ⟧ : PER Dom×()
 
@@ -384,7 +387,7 @@ and could probably be mitigated by having multiple specialized definitions of �
 #### Type-level projection
 
 As noted above, we have to treat the first projection of an existential type differently, since it
-is a type-level computation.
+is a type-level computation. `t.type = unpack ⋆ t as (x,y) in x`
 
     ⟦ unpack ⋆ t as (x,y) in x ⟧ : ctx -> PER Dom×()
 
@@ -402,7 +405,7 @@ in the interpretation of the type we are projecting out of the existential.
 Consider now the respective case of the fundamental lemma, using the definitions we developed thus far:
 
     IH1:     Γ ⊢ t1 : ∃x:⋆.T                  --> (nbe t1, ()) == (nbe t1, ()) ∈ ⟦ ∃x:⋆.T ⟧ : PER Dom×()
-    IH2:     Γ,x:⋆,y:T ⊢ x : ⋆                --> (nbe x, ⟦ x ⟧) == (nbe x, ⟦ x ⟧) ∈ ⟦ ⋆ ⟧      : Per Dom×⟨ ⋆ ⟩
+    IH2:     Γ,x:⋆,y:T ⊢ x : ⋆                --> (nbe x, ⟦ x ⟧) == (nbe x, ⟦ x ⟧) ∈ ⟦ ⋆ ⟧  : Per Dom×⟨ ⋆ ⟩
                                          trivial, since x will be bound in an env assigning an appropriate semantic element
              --------------------------------
     Goal:    Γ ⊢ unpack ⋆ t1 as (x,y) in x : ⋆  --> (nbe unpack t1 ..., ⟦unpack ... ⟧) == (nbe unpack t1, ⟦unpack ... ⟧) ∈ ⟦ ⋆ ⟧ : PER Dom×⟨ ⋆ ⟩
@@ -504,7 +507,7 @@ Simple kind syntax :
 
     k ::= ... | k ⊗ k
 
-(I use ⊗ as a syntactic symbol, to avoid confusion with metalanguage product type)
+(I use ⊗ as a syntactic symbol, to avoid confusion with the metalanguage product type)
 
 Erasure from terms into simple kinds:
 
@@ -539,7 +542,7 @@ variants in the fundamental lemma.  To make the proof go through
 smoothly, it makes sense to strengthen the rules with evidence how the
 respective Σ-type is classified by the system.  This is usually
 handled by a classification theorem about the type system, but then we
-would not obtain any useful induction hypothesis about the Σ-type's components.
+would not obtain any usable induction hypothesis about the Σ-type's components.
 
 Case `s1 = s2 = ⋆`:
 
@@ -576,21 +579,124 @@ Case `s1 = s2 = ◻`:
 
 Thus, ⟦ (t1,t2) ⟧ = (⟦ t1 ⟧, ⟦ t2 ⟧).
 
-**TODO** give a complete definition of the interpretation rules for (t1,t2).
+#### Avoiding non-uniform pair interpretations
+
+It is a bit unwieldy to let ⟦ (t1,t2) ⟧ have non-uniform shape, since we would need to pass additional context information for the
+definition. Since `⟨ ♢ ⟩ = unit`, we could simplify the erasure to be |Σx:T.U| = |T| ⊗ |U|, and thus
+⟨ |Σx:κ1.κ2| ⟩ = |κ1|×|κ2| and  ⟦ (t1,t2) ⟧ = (⟦ t1 ⟧, ⟦ t2 ⟧) once and for all.
+For instance, the `s1 = ⋆`, `s2 = ◻` case would interpret ⟦ (t1,t2) ⟧ as a `Per Dom×⟨ ♢ ⊗ |κ| ⟩ = Per Dom×⟨ ♢ ⊗ |κ| ⟩ = Per Dom×(unit × ⟨ |κ| ⟩)`
+which is isomorphic to `Per Dom×⟨ |κ| ⟩`. We could handle this in a similar manner
+to the impredicativity problem, i.e., treat type `unit × ⟨ |κ| ⟩` as `⟨ |κ| ⟩` and vice versa by appropriate conversions.
 
 ### Elimination
 
-    Γ ⊢ t : Σx:T.U
-    --------------
-    Γ ⊢ π1 t : T
+Again, we need the sortedness evidence for respective components of the Σ type.
+For brevity, we do not explicitly spell these out in the assumptions.
 
-    Γ ⊢ t : Σx:T.U
+Case `s1 = s2 = ⋆`:
+
+    Γ ⊢ t : Σx:T.U       --> (nbe t, ())^2 ∈ ⟦ Σx:κ.U ⟧ : Per Dom×()
+    --------------
+    Γ ⊢ π1 t : T         --> (nbe (π1 t), ())^2 ∈ ⟦ T ⟧
+
+    Γ ⊢ t : Σx:T.U       --> (nbe t, ())^2 ∈ ⟦ Σx:T.U ⟧
     ------------------
-    Γ ⊢ π2 t : U[π1 t/x]
+    Γ ⊢ π2 t : U[π1 t/x] --> (nbe (π2 t), ())^2 ∈ ⟦ U[π1 t/x] ⟧
+
+(Note: In the explicit substitution model, `U[π1 t/x]` will normalize the first projection and extend the environment with a binding,
+which is then used to interpret `U`).
+
+Case `s1 = ◻`, `s2 = ⋆`:
+
+    Γ ⊢ t : Σx:κ.U       --> (nbe t, ⟦ t ⟧)^2 ∈ ⟦ Σx:κ.U ⟧ : Per Dom×⟨ |Σx:κ.U| ⟩ = Per Dom×⟨ |κ| ⊗ |U| ⟩ = Per Dom×(⟨|κ|⟩×unit) ≅ Per Dom×⟨|κ|⟩
+    --------------
+    Γ ⊢ π1 t : κ         --> (nbe (π1 t), ⟦π1 t⟧)^2 ∈ ⟦ |κ| ⟧
+
+    Γ ⊢ t : Σx:κ.U       --> (nbe t, ⟦ t ⟧)^2 ∈ ⟦ Σx:κ.U ⟧
+    ------------------
+    Γ ⊢ π2 t : U[π1 t/x] --> (nbe (π2 t), ())^2 ∈ ⟦ U[π1 t/x] ⟧
+
+Note that Σx:κ.U is a *kind* (by the formation rules), while U[π1 t/x] is a *type*.
+If we were to treat Σx:κ.U as a type (violating the max rule), then we run into an inconsistency
+in the fundamental lemma for the premise Γ ⊢ t : Σx:κ.U. With the max rule, the interpretation ⟦ Σx:κ.U ⟧
+has type
+
+    Per Dom×⟨ |Σx:κ.U| ⟩ = Per Dom×⟨ |κ| ⊗ |U| ⟩ = Per Dom×(⟨|κ|⟩×unit) ≅ Per Dom×⟨|κ|⟩
+
+i.e., the erasure semantics treats Σx:κ.U the same as the kind κ! If Σx:κ.U was a type instead, then
+the type of ⟦ Σx:κ.U ⟧ should be Per Dom×(), or something isomorphic to that type.
+
+Clearly, Per Dom×⟨|κ|⟩ is not isomorphic to Per Dom×(), e.g., type Per Dom×⟨ ⋆ ⟩ = Per Dom×(Per Dom×())
+has more values (partial equivalence relations) than type Per Dom×().
+
+However, this is not necessarily a strong case against violating the
+max rule. It just points out that the model construction is flawed if
+we violate that rule. There could still be a better model out there
+not requiring max rule. The literature tells us of course that we
+won't find such a model.
+
+Case `s1 = ⋆`, `s2 = ◻`:
+
+    Γ ⊢ t : Σx:T.κ       --> (nbe t, ⟦ t ⟧)^2 ∈ ⟦ Σx:T.κ ⟧ : Per Dom×⟨ |Σx:T.κ| ⟩ = Per Dom×⟨ |T| ⊗ |κ| ⟩ = Per Dom×(unit×⟨|κ|⟩) ≅ Per Dom×⟨|κ|⟩
+    --------------
+    Γ ⊢ π1 t : T         --> (nbe (π1 t), ())^2 ∈ ⟦ T ⟧ : Per Dom×() !
+
+    Γ ⊢ t : Σx:T.κ       --> (nbe t, ⟦ t ⟧)^2 ∈ ⟦ Σx:T.κ ⟧
+    ------------------
+    Γ ⊢ π2 t : κ[π1 t/x] --> (nbe (π2 t), ⟦ π2 t ⟧)^2 ∈ ⟦ κ[π1 t/x] ⟧ : Per Dom×⟨|κ|⟩
+
+Case `s1 = ◻`, `s2 = ◻`:
+
+    Γ ⊢ t : Σx:κ1.κ2     --> (nbe t, ⟦ t ⟧)^2 ∈ ⟦ Σx:κ1.κ2 ⟧ : Per Dom×⟨ |Σx:κ1.κ2| ⟩ = Per Dom×(⟨|κ1|⟩×⟨|κ2|⟩)
+    --------------
+    Γ ⊢ π1 t : κ1        --> (nbe (π1 t), ⟦π1 t⟧)^2 ∈ ⟦ κ1 ⟧ : Per Dom×⟨|κ1|⟩
+
+    Γ ⊢ t : Σx:κ1.κ2     --> (nbe t, ⟦ t ⟧)^2 ∈ ⟦ Σx:κ1.κ2 ⟧
+    ------------------
+    Γ ⊢ π2 t : κ2[π1 t/x] --> (nbe (π2 t), ⟦ π2 t ⟧)^2 ∈ ⟦ κ2[π1 t/x] ⟧ : Per Dom×⟨|κ2|⟩
 
 #### Evaluation
 
+The evaluation of the eliminators is straightforward:
+
+    eval_pi1 : Dom ⇀ Dom
+    eval_pi1 (dpair d1 d2)   = d1
+    eval_pi1 (↑⟨ ΣD1.D2 ⟩ ne) = ↑⟨ D1 ⟩ (π1 ne)
+
+    eval_pi2 : Dom ⇀ Dom
+    eval_pi2 (dpair d1 d2)   = d2
+    eval_pi2 (↑⟨ ΣD1.D2 ⟩ ne) = ↑⟨ eval_app D2 (eval_pi1 (↑⟨ D1 ⟩ π1 ne))⟩ (π2 ne)
+
 ### Sigma Type PER Semantics
+
+With the two projections, the semantics is straightforward:
+
+    ⟦ Σx:T.U ⟧   = η γ ρ => {{ (d1, ()) (d2, ()) | ∃ D1, D2, eval_pi1 d1 = D1 /\ = eval_pi1 d2 = D2 /\ (D1,()) == (D2,()) ∈ ⟦ T ⟧(η|γ|ρ)
+                                                            /\ ∃ D'1 D'2, eval_pi2 d1 = D'1 /\ eval_pi2 d2 = D'2 /\ (D'1,()) == (D'2,()) ∈ ⟦ U ⟧(D1;η|⋆;γ|();ρ) }}
+
+    ⟦ Σx:κ.U ⟧   = η γ ρ => {{ (d1, (𝒟1,())) (d2, (𝒟2,())) | ∃ D1, D2, eval_pi1 d1 = D1 /\ = eval_pi1 d2 = D2 /\ (D1,𝒟1) == (D2,𝒟2) ∈ ⟦ κ ⟧(η|γ|ρ)
+                                                                      /\ ∃ D'1 D'2, eval_pi2 d1 = D'1 /\ eval_pi2 d2 = D'2 /\ (D'1,()) == (D'2,()) ∈ ⟦ U ⟧(D1;η|⋆;γ|𝒟1;ρ) }}
+
+    ⟦ Σx:T.κ ⟧   = η γ ρ => {{ (d1, ((),𝒟1)) (d2, ((),𝒟2)) | ∃ D1, D2, eval_pi1 d1 = D1 /\ = eval_pi1 d2 = D2 /\ (D1,()) == (D2,()) ∈ ⟦ T ⟧(η|γ|ρ)
+                                                                      /\ ∃ D'1 D'2, eval_pi2 d1 = D'1 /\ eval_pi2 d2 = D'2 /\ (D'1,𝒟1) == (D'2,𝒟2) ∈ ⟦ κ ⟧(D1;η|⋆;γ|();ρ) }}
+
+    ⟦ Σx:κ1.κ2 ⟧ = η γ ρ => {{ (d1, (𝒟1,𝒟'1)) (d2, (𝒟2,𝒟'2)) | ∃ D1, D2, eval_pi1 d1 = D1 /\ = eval_pi1 d2 = D2 /\ (D1,𝒟1) == (D2,𝒟1) ∈ ⟦ κ1 ⟧(η|γ|ρ)
+                                                                         /\ ∃ D'1 D'2, eval_pi2 d1 = D'1 /\ eval_pi2 d2 = D'2 /\ (D'1,𝒟'1) == (D'2,𝒟'2) ∈ ⟦ κ2 ⟧(D1;η|⋆;γ|𝒟1;ρ) }}
+
+We can define the semantics of the various Σ-types in a single parametric metalanguage definition, just as with ℿ:
+
+    𝝨 𝒳 𝒴 := {{ (d1, (𝒟1, 𝒟'1)) (d2, (𝒟2,𝒟'2)) | ∃ D1, D2, eval_pi1 d1 = D1 /\ = eval_pi1 d2 = D2 /\ (D1,𝒟1) == (D2,𝒟2) ∈ 𝒳
+                                                             /\ ∃ D'1 D'2, eval_pi2 d1 = D'1 /\ eval_pi2 d2 = D'2 /\ (D'1,𝒟'1) == (D'2,𝒟'2) ∈ (𝒴 (D1,𝒟1)) }}
+
+Here, it shows that it is useful to have uniform pair interpretations for all possible Σ-type variations, even the ones
+where one or more components are erased to unit.
+**TODO**: spell the full metalanguage type signature of the above definition.
+
+For instance, the interpretation for `s1 = s2 = ⋆` becomes
+
+     ⟦ Σx:T.U ⟧ = η γ ρ => 𝝨 (⟦ T ⟧(η|γ|ρ)) (𝝺 (D1,𝒟1) ⇒ ⟦ U ⟧(D1;η|⋆;γ|𝒟1;ρ))
+
+the other cases are similar.
 
 #### Why Restrict Formation?
 
