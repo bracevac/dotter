@@ -1,3 +1,7 @@
+# NEWSFLASH 
+
+The show continues [here](https://github.com/bracevac/path-dependent).
+
 # DOTter
 
 (Mostly) Agda<sup>1</sup> and Coq developments and experiments on dependent object types (DOT) and related systems.
